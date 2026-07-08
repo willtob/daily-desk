@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Secrets
+.env
+
+# Generated digests (Phase 5)
+digests/*.md
+
+# macOS
+.DS_Store

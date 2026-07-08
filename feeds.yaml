@@ -1,0 +1,36 @@
+# Personalized Tech News Digest — feed configuration
+#
+# Feeds are grouped by theme. The theme tag travels with each article and is
+# used later (Phase 3) to weight scoring and (Phase 4) to group the digest.
+#
+# These are CANDIDATE feeds to get Phase 1 running — edit, add, or remove any of
+# them freely. Each entry needs a `name` (shown in the digest) and an RSS `url`.
+
+settings:
+  # Only ingest articles published within this many hours of the run.
+  lookback_hours: 48
+
+themes:
+  embedded_wearables:
+    - name: Hackaday
+      url: https://hackaday.com/feed/
+    - name: Adafruit Blog
+      url: https://blog.adafruit.com/feed/
+    - name: CNX Software
+      url: https://www.cnx-software.com/feed/
+
+  big_tech:
+    - name: The Verge
+      url: https://www.theverge.com/rss/index.xml
+    - name: Ars Technica
+      url: https://feeds.arstechnica.com/arstechnica/index
+    - name: TechCrunch
+      url: https://techcrunch.com/feed/
+
+  startup_vc:
+    - name: VentureBeat
+      url: https://venturebeat.com/feed/
+    - name: Crunchbase News
+      url: https://news.crunchbase.com/feed/
+    - name: Hacker News Front Page
+      url: https://hnrss.org/frontpage
