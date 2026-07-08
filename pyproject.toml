@@ -5,6 +5,7 @@ description = "Personalized tech news digest — a LangGraph pipeline that score
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "beautifulsoup4>=4.15.0",
     "feedparser>=6.0.12",
     "langgraph>=1.2.8",
     "langsmith>=0.10.0",
@@ -15,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 esp-ingest = "esp_news.cli:ingest_main"
+esp-dedup = "esp_news.cli:dedup_main"
 
 [build-system]
 requires = ["hatchling"]
