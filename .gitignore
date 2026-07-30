@@ -7,3 +7,9 @@
 
 # Real Wi-Fi credentials — use wifi_credentials.example.h as the template
 src/wifi_credentials.h
+
+# LVGL simulator build artifacts
+sim/build/
+sim/sim
+sim/*.bmp
+sim/*.png
