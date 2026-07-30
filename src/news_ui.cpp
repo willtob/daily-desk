@@ -368,10 +368,12 @@ static void build_list_view(lv_obj_t *scr)
         card_badge[i] = make_label(row, &lv_font_montserrat_14, CLR_DIM, 0);
         card_score[i] = make_label(row, &lv_font_montserrat_14, CLR_DIM, 0);
 
-        /* Title — clipped to 3 lines with an ellipsis */
+        /* Title — wraps in full, never ellipsised. Height is left as
+         * LV_SIZE_CONTENT so the card grows to fit; at 144 px a headline runs
+         * to 5-7 lines and clipping it at 3 hid the part that says what the
+         * story actually is, which is the whole job of this screen. */
         card_title[i] = make_label(card[i], &lv_font_montserrat_16, CLR_WHITE, TEXT_W);
-        lv_obj_set_height(card_title[i], TITLE_H);
-        lv_label_set_long_mode(card_title[i], LV_LABEL_LONG_DOT);
+        lv_label_set_long_mode(card_title[i], LV_LABEL_LONG_WRAP);
 
         card_source[i] = make_label(card[i], &lv_font_montserrat_14, CLR_DIM, TEXT_W);
         lv_label_set_long_mode(card_source[i], LV_LABEL_LONG_DOT);
