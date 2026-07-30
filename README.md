@@ -12,8 +12,8 @@ full build plan.
 - [x] Phase 1 — ingest node (fetch + filter RSS)
 - [x] Phase 2 — dedup / normalize
 - [x] Phase 3 — score (fitness function)
-- [ ] Phase 4 — curate
-- [ ] Phase 5 — digest output
+- [x] Phase 4 — curate
+- [x] Phase 5 — digest output (v1 complete)
 
 ## Setup
 Requires [uv](https://docs.astral.sh/uv/).
@@ -60,6 +60,34 @@ its single best match across all areas, so it only has to be strong on one thing
 
 Embeddings are cached in `.cache/embeddings.json` keyed by model + text, so
 re-running while tuning the profile is nearly free — only new text hits the API.
+
+## Running Phases 4–5 (curate + digest)
+```bash
+uv run esp-curate               # rank + cap + suppress repeats, print the front page
+uv run esp-digest               # run the whole graph, print and write digests/<date>.md
+uv run esp-digest --dry-run     # print only — writes nothing, marks nothing as seen
+uv run esp-digest --top 15 --per-area-cap 4
+uv run esp-digest --no-seen     # allow articles from earlier digests to reappear
+```
+
+`esp-digest` is the v1 entry point: it runs the full LangGraph pipeline
+(`ingest → dedup → score → curate → digest`), prints the markdown, writes it to
+`digests/YYYY-MM-DD.md`, and records what it showed.
+
+**Per-area cap.** A pure top-N by score would hand back a page of Barcelona
+city news most days — those papers simply publish more than the tech blogs. The
+cap (default 3) limits any one interest area; if that leaves the page short, a
+second pass backfills by score, so the cap shapes the page without shrinking it.
+
+**Cross-run suppression.** `digests/seen.json` remembers which articles have
+already appeared, keyed by canonical URL so a link that picks up tracking params
+still counts. Entries expire after 45 days. Only articles that actually made a
+digest are recorded, and only after the file is written — a crash mid-run can't
+silently suppress them from the next one. Use `--no-seen` to ignore it.
+
+Each entry carries a why-it-scored line — winning area, score, and runner-up.
+That's what makes the digest log useful for tuning `interests.yaml`: when a
+story looks wrong, the line shows whether it won on the area you'd expect.
 
 ## Tracing (LangSmith)
 Set in `.env`:

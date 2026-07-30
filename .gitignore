@@ -9,8 +9,9 @@ __pycache__/
 # Embedding cache (Phase 3) — regenerates itself, just costs an API call
 .cache/
 
-# Generated digests (Phase 5)
+# Generated digests (Phase 5) and the cross-run seen store
 digests/*.md
+digests/seen.json
 
 # macOS
 .DS_Store

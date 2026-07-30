@@ -8,11 +8,15 @@ from collections import Counter
 
 from esp_news.config import FeedsConfig, load_feeds_config
 from esp_news.embeddings import DEFAULT_CACHE_PATH, EmbeddingClient, MissingAPIKeyError
+from esp_news.graph import run_digest_graph
 from esp_news.interests import load_interests_profile
 from esp_news.models import Article
+from esp_news.nodes.curate import curate_articles
 from esp_news.nodes.dedup import dedup_articles
+from esp_news.nodes.digest import write_digest
 from esp_news.nodes.ingest import ingest_articles
 from esp_news.nodes.score import score_articles
+from esp_news.seen import SeenStore
 from esp_news.tracing import init_tracing
 
 
@@ -168,6 +172,133 @@ def score_main() -> None:
             f"    {area.name:<20} all:{overall.get(area.name, 0):>4}   "
             f"top:{top_n.get(area.name, 0):>3}"
         )
+
+
+def _add_curate_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--top", type=int, default=10, help="How many articles to curate (default 10)."
+    )
+    parser.add_argument(
+        "--per-area-cap",
+        type=int,
+        default=3,
+        help="Max articles per interest area before backfilling (0 = off, default 3).",
+    )
+    parser.add_argument(
+        "--no-seen",
+        action="store_true",
+        help="Allow articles already shown in earlier digests to reappear.",
+    )
+
+
+def _build_client(profile, no_cache: bool) -> EmbeddingClient:
+    return EmbeddingClient(
+        model=profile.embedding_model,
+        cache_path=None if no_cache else DEFAULT_CACHE_PATH,
+    )
+
+
+def curate_main() -> None:
+    """Phase 4 checkpoint: does the top N look like a reasonable front page?"""
+    parser = _base_parser("Phase 4 — rank and curate scored articles.")
+    _add_threshold_arg(parser)
+    _add_curate_args(parser)
+    parser.add_argument("--interests", default=None, help="Path to interests.yaml.")
+    parser.add_argument("--no-cache", action="store_true", help="Bypass embed cache.")
+    args = parser.parse_args()
+
+    _configure_logging()
+    init_tracing()
+
+    profile = load_interests_profile(args.interests)
+    raw, _ = _load_and_ingest(args)
+    deduped = dedup_articles(raw, similarity_threshold=args.threshold)
+
+    try:
+        scored = score_articles(
+            deduped, profile=profile, client=_build_client(profile, args.no_cache)
+        )
+    except MissingAPIKeyError as exc:
+        raise SystemExit(f"\n{exc}")
+
+    seen = None if args.no_seen else SeenStore()
+    curated = curate_articles(
+        scored,
+        top_n=args.top,
+        per_area_cap=args.per_area_cap,
+        seen=seen,
+    )
+
+    print("\n=== Front page ===")
+    if not curated:
+        raise SystemExit("  nothing cleared curation — try --no-seen or a wider --hours")
+    for rank, art in enumerate(curated, 1):
+        print(f"  {rank:>2}. {art.score:.4f} [{art.matched_area:<18}] "
+              f"{art.source[:18]:<18} {art.title[:52]}")
+
+    print("\n  areas represented:")
+    for area, count in Counter(a.matched_area for a in curated).most_common():
+        print(f"    {area:<20} {count}")
+    if seen is not None:
+        print(f"\n  (seen store holds {len(seen)} urls; not updated by this command)")
+
+
+def digest_main() -> None:
+    """Phase 5 checkpoint: run the whole graph and write a real digest."""
+    parser = _base_parser("Phase 5 — run the full pipeline and write a digest.")
+    _add_threshold_arg(parser)
+    _add_curate_args(parser)
+    parser.add_argument("--interests", default=None, help="Path to interests.yaml.")
+    parser.add_argument("--no-cache", action="store_true", help="Bypass embed cache.")
+    parser.add_argument(
+        "--out", default=None, help="Directory for the digest (default: digests/)."
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the digest without writing it or recording articles as seen.",
+    )
+    args = parser.parse_args()
+
+    _configure_logging()
+    init_tracing()
+
+    config = load_feeds_config(args.feeds)
+    if args.hours is not None:
+        config.settings.lookback_hours = args.hours
+    profile = load_interests_profile(args.interests)
+    seen = None if args.no_seen else SeenStore()
+
+    try:
+        state = run_digest_graph(
+            config,
+            profile,
+            client=_build_client(profile, args.no_cache),
+            seen=seen,
+            similarity_threshold=args.threshold,
+            top_n=args.top,
+            per_area_cap=args.per_area_cap,
+        )
+    except MissingAPIKeyError as exc:
+        raise SystemExit(f"\n{exc}")
+
+    print()
+    print(state.digest_markdown)
+
+    if args.dry_run:
+        print("\n(dry run — nothing written, nothing marked as seen)")
+        return
+
+    path = write_digest(state.digest_markdown, directory=args.out)
+    print(f"\nWritten to {path}")
+
+    # Only record what actually made the digest, and only after it's on disk —
+    # a crash mid-run must not silently suppress articles from the next one.
+    if seen is not None:
+        for art in state.curated_articles:
+            seen.add(art.url)
+        seen.prune()
+        seen.save()
 
 
 if __name__ == "__main__":

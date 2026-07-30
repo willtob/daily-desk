@@ -20,6 +20,8 @@ dependencies = [
 esp-ingest = "esp_news.cli:ingest_main"
 esp-dedup = "esp_news.cli:dedup_main"
 esp-score = "esp_news.cli:score_main"
+esp-curate = "esp_news.cli:curate_main"
+esp-digest = "esp_news.cli:digest_main"
 
 [build-system]
 requires = ["hatchling"]
