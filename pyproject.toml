@@ -9,6 +9,8 @@ dependencies = [
     "feedparser>=6.0.12",
     "langgraph>=1.2.8",
     "langsmith>=0.10.0",
+    "numpy>=2.4.6",
+    "openai>=2.50.0",
     "pydantic>=2.13.4",
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",
@@ -17,6 +19,7 @@ dependencies = [
 [project.scripts]
 esp-ingest = "esp_news.cli:ingest_main"
 esp-dedup = "esp_news.cli:dedup_main"
+esp-score = "esp_news.cli:score_main"
 
 [build-system]
 requires = ["hatchling"]

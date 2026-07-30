@@ -92,6 +92,14 @@ research orgs? What about startup/VC — funding rounds in AI/hardware specifica
 company strategy?). This is worth writing deliberately rather than defaulting to generic
 phrasing.
 
+I like hearing about updates in the ai world especailly with open source/weight content. I love any consciousness research like the claude emotion vector research paper. i like seeing older ai architectures like CNN RNN LSTM GAN used in the real world. 
+
+I also want to be updated on what is happening in both florida and spain. doesn't need to be tech but if something major like a natural disaster is happening i want to know about it. i live in fort lauderdale and barcelona. 
+
+i also want to work in a big tech company some day so give me articles that could relate to that. 
+
+While it makes sense to pool recent news, i'm also okay with evergreen articles that allign heavily with my interests. just don't show me the same article a bunch of times. 
+
 **Checkpoint:** run standalone on a batch of articles, sanity-check that high-scoring
 articles actually look interesting and low-scoring ones don't.
 

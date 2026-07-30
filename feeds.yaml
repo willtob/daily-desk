@@ -1,13 +1,17 @@
 # Personalized Tech News Digest — feed configuration
 #
-# Feeds are grouped by theme. The theme tag travels with each article and is
-# used later (Phase 3) to weight scoring and (Phase 4) to group the digest.
+# Feeds are grouped by theme. The theme is a provenance tag that travels with each
+# article — it is NOT the scoring dimension. Scoring happens against the interest
+# areas in interests.yaml, and any feed can win on any area (a Hackaday post can
+# score on `ai_open_source`, an El País story on `spain`).
 #
-# These are CANDIDATE feeds to get Phase 1 running — edit, add, or remove any of
-# them freely. Each entry needs a `name` (shown in the digest) and an RSS `url`.
+# Each entry needs a `name` (shown in the digest) and an RSS `url`. Edit freely.
+# Every URL here was verified to parse and return entries.
 
 settings:
-  # Only ingest articles published within this many hours of the run.
+  # Only ingest articles published within this many hours of the run. Several
+  # feeds below publish their whole archive (Hugging Face, OpenAI), so this
+  # cutoff is what keeps a run from pulling thousands of stale entries.
   lookback_hours: 48
 
 themes:
@@ -34,3 +38,85 @@ themes:
       url: https://news.crunchbase.com/feed/
     - name: Hacker News Front Page
       url: https://hnrss.org/frontpage
+
+  # AI ecosystem, weighted toward open source / open weight releases.
+  ai:
+    - name: Hugging Face Blog
+      url: https://huggingface.co/blog/feed.xml
+    - name: Simon Willison
+      url: https://simonwillison.net/atom/everything/
+    - name: r/LocalLLaMA
+      url: https://www.reddit.com/r/LocalLLaMA/.rss
+    - name: Together AI
+      url: https://www.together.ai/blog/rss.xml
+    - name: Import AI
+      url: https://importai.substack.com/feed
+
+  # Interpretability, model welfare, and lab research announcements.
+  ai_research:
+    - name: Alignment Forum
+      url: https://www.alignmentforum.org/feed.xml
+    - name: LessWrong
+      url: https://www.lesswrong.com/feed.xml
+    # Targeted arXiv API queries rather than the cs.AI category firehose, which
+    # posts ~340 papers a day and would swamp everything else in the digest.
+    - name: arXiv Interpretability
+      url: "http://export.arxiv.org/api/query?search_query=all:%22mechanistic+interpretability%22&sortBy=submittedDate&sortOrder=descending&max_results=25"
+    - name: arXiv Consciousness
+      url: "http://export.arxiv.org/api/query?search_query=all:%22AI+consciousness%22+OR+all:%22model+welfare%22&sortBy=submittedDate&sortOrder=descending&max_results=25"
+    - name: OpenAI News
+      url: https://openai.com/news/rss.xml
+    - name: Google DeepMind
+      url: https://deepmind.google/blog/rss.xml
+    - name: Quanta Magazine
+      url: https://api.quantamagazine.org/feed/
+
+  # No feed is dedicated to "older architectures in production", so these are
+  # general applied-ML sources that the classic_ml_applied interest area mines.
+  ml_applied:
+    - name: Google Research
+      url: https://research.google/blog/rss/
+    - name: NVIDIA Developer
+      url: https://developer.nvidia.com/blog/feed
+    - name: PyImageSearch
+      url: https://pyimagesearch.com/feed/
+    - name: ML Mastery
+      url: https://machinelearningmastery.com/feed/
+
+  # Big-tech engineering blogs — these post slowly (weeks between entries), which
+  # is inherent to them rather than a broken feed.
+  eng_blogs:
+    - name: Meta Engineering
+      url: https://engineering.fb.com/feed/
+    - name: Netflix Tech Blog
+      url: https://netflixtechblog.com/feed
+    - name: AWS News
+      url: https://aws.amazon.com/blogs/aws/feed/
+
+  florida:
+    # Active NWS warnings statewide — the actually-actionable one for hurricanes,
+    # flooding, and heat. Empty most days, which is the point.
+    - name: NWS Florida Alerts
+      url: "https://api.weather.gov/alerts/active.atom?area=FL"
+    - name: NHC Atlantic
+      url: https://www.nhc.noaa.gov/index-at.xml
+    - name: WLRN Local News
+      url: https://www.wlrn.org/local-news.rss
+    - name: Miami New Times
+      url: https://www.miaminewtimes.com/miami/Rss.xml
+    - name: NBC6 Miami
+      url: "https://www.nbcmiami.com/?rss=y"
+
+  spain:
+    - name: El Pais English
+      url: https://feeds.elpais.com/mrss-s/pages/ep/site/english.elpais.com/portada
+    - name: The Local Spain
+      url: https://feeds.thelocal.com/rss/es
+    # Spanish-language, Barcelona-focused. The `spain` interest area carries
+    # Spanish reference phrases so these aren't penalized against English feeds.
+    # Barcelona section rather than /rss/home.xml — the home feed dumps national
+    # news and sport, and was flooding the corpus with off-topic Spanish articles.
+    - name: La Vanguardia Barcelona
+      url: https://www.lavanguardia.com/rss/local/barcelona.xml
+    - name: El Periodico Barcelona
+      url: https://www.elperiodico.com/es/rss/barcelona/rss.xml

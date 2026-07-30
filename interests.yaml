@@ -1,0 +1,138 @@
+# Personal interest profile — the "fitness function" that scores articles.
+#
+# Every article (title + summary) is embedded and compared against the texts
+# below by cosine similarity. An article's score is its best match across all
+# areas, multiplied by that area's weight; the winning area is recorded so the
+# digest can group by it and say why something scored.
+#
+# THIS FILE IS MEANT TO BE TUNED — the prose here is what makes the digest mine.
+#   description: 2-4 sentences on what makes an article in this area interesting.
+#                Embedded as a single vector, so it sets the general direction.
+#   references:  short, concrete phrases — the kind of headline I'd want to see.
+#                Each is embedded and matched on its own, so sharp phrasing here
+#                moves the needle more than long prose does.
+#   weight:      multiplier on this area's similarity (1.0 = neutral). Raise to
+#                surface an area more often, lower to bury it.
+#
+# Areas are independent of the feed themes in feeds.yaml: a Hackaday article can
+# win on `ai_open_source`, and a TechCrunch one on `spain`.
+
+embedding_model: text-embedding-3-small
+
+areas:
+  - name: ai_open_source
+    weight: 1.0
+    description: >
+      Updates from the AI world, with a strong pull toward open source and open
+      weight work: model releases that actually publish weights, permissive
+      licensing, and the tooling for running models yourself. Closed frontier
+      lab announcements still matter, but an open release is more interesting to
+      me than an equivalent closed one.
+    references:
+      - "open weight model release published under a permissive license"
+      - "new open source large language model and its published weights"
+      - "running open models locally: inference tooling, quantization, self-hosting"
+      - "major AI lab announces a new frontier model or capability"
+      - "open source AI ecosystem, datasets, and fine-tuning tools"
+
+  - name: ai_consciousness
+    weight: 1.0
+    description: >
+      Research on what is actually going on inside these models: interpretability
+      work that finds internal features or steering vectors, and anything
+      touching machine consciousness, introspection, or model welfare. The Claude
+      emotion-vector paper is the exemplar of what I want more of — empirical
+      work on model internals and inner states, not armchair speculation.
+    references:
+      - "interpretability research finding internal features or vectors inside a language model"
+      - "research paper on machine consciousness, sentience, or model welfare"
+      - "steering model behavior by manipulating activations or emotion vectors"
+      - "does the model have inner states, introspection, or self-knowledge"
+      - "mechanistic interpretability and probing what a neural network represents"
+
+  - name: classic_ml_applied
+    weight: 1.0
+    description: >
+      Pre-transformer architectures earning their keep in the real world: CNNs,
+      RNNs, LSTMs, and GANs deployed in production or research where they still
+      beat the fashionable option. I care about the applied engineering story —
+      what was built, on what hardware, and why the older architecture was the
+      right call.
+    references:
+      - "convolutional neural network deployed in a real world production system"
+      - "LSTM or recurrent network used for practical forecasting or time series"
+      - "GAN used to generate, restore, or upscale real images in industry"
+      - "older neural network architecture still outperforming transformers on a task"
+      - "small efficient model running on embedded or edge hardware"
+
+  - name: big_tech_career
+    weight: 1.0
+    description: >
+      Big tech company news read through the lens of wanting to work at one:
+      hiring and headcount, new teams and orgs, reorgs and layoffs, engineering
+      culture, and what the job market for software engineers actually looks
+      like. Deep engineering blog posts about how these companies build their
+      systems count too — that's the work I'd be doing.
+    references:
+      - "big tech company hiring, new team, or engineering org change"
+      - "what it is like to work as an engineer at Google, Meta, Apple, Amazon, Microsoft, or Nvidia"
+      - "engineering blog post explaining how a large company built its infrastructure"
+      - "tech layoffs, reorgs, and the software engineering job market"
+      - "big tech earnings, strategy, and where the company is investing next"
+
+  - name: embedded_wearables
+    weight: 1.0
+    description: >
+      Embedded hardware and wearables: new microcontrollers and dev boards,
+      teardowns, and low-power design. I want the build details — pinouts, power
+      budgets, displays — not just a product announcement.
+    references:
+      - "new microcontroller, dev board, or SoC announcement"
+      - "wearable hardware teardown or DIY build"
+      - "e-ink display, low power design, or battery life engineering"
+      - "ESP32 or Raspberry Pi project with build details"
+
+  - name: startup_vc
+    weight: 1.0
+    description: >
+      Startup and venture business, weighted toward AI and hardware companies:
+      funding rounds, what investors are backing, and the strategy behind a
+      pivot or acquisition.
+    references:
+      - "startup raises a funding round for AI or hardware"
+      - "venture capital investment trends and new fund news"
+      - "startup strategy, pivot, or acquisition"
+
+  - name: florida
+    weight: 1.0
+    description: >
+      What's happening where I live in Fort Lauderdale, tech or not. Major
+      consequential events first — hurricanes, flooding, and other natural
+      disasters I'd need to act on — then the broader South Florida news and
+      Miami-area tech and business scene.
+    references:
+      - "hurricane, tropical storm, or major flooding in South Florida"
+      - "Fort Lauderdale and Broward County local news"
+      - "Miami tech scene and companies relocating to South Florida"
+      - "major emergency or evacuation affecting Florida residents"
+
+  - name: spain
+    weight: 1.0
+    description: >
+      What's happening where I also live, in Barcelona, tech or not. Major
+      consequential events first — wildfires, floods, heat waves, strikes,
+      elections — then Barcelona city news and the Spanish tech and startup
+      scene.
+    references:
+      - "Barcelona local news and city government"
+      - "major events in Spain: elections, strikes, wildfires, floods, heat waves"
+      - "Spanish tech and startup scene in Barcelona and Madrid"
+      - "travel disruption or transit strike affecting Spain"
+      # Two of the Barcelona feeds (La Vanguardia, El Periodico) publish in
+      # Spanish. Cross-language embedding similarity is weaker than same-language,
+      # so without these the Spanish-language articles score systematically lower
+      # than English ones and get buried — backwards from what I want.
+      - "noticias de Barcelona y Cataluña"
+      - "incendio forestal, inundaciones u ola de calor en España"
+      - "huelga de transporte o interrupción de vuelos en España"
+      - "elecciones y política española"

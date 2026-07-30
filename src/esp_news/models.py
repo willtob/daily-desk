@@ -22,8 +22,12 @@ class Article(BaseModel):
     published: datetime | None = None
     summary: str = ""  # raw RSS summary/description (HTML stripped in Phase 2)
     content: str | None = None  # optional full-text (future)
-    embedding: list[float] | None = None  # set in Phase 3 (score node)
-    score: float | None = None  # set in Phase 3 (score node)
+    embedding: list[float] | None = None  # left unset: see nodes/score.py
+    score: float | None = None  # best weighted area similarity (Phase 3)
+    matched_area: str | None = None  # interest area that produced `score` (Phase 3)
+    area_scores: dict[str, float] = Field(  # every area's weighted similarity
+        default_factory=dict
+    )
 
 
 class DigestState(BaseModel):
