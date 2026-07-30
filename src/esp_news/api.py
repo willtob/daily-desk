@@ -20,10 +20,17 @@ import threading
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 
+# Load .env at import. Without this only /refresh sees the key (it calls
+# init_tracing itself), and /audio fails with a confusing 503 despite the key
+# being present in the file.
+load_dotenv()
+
 from esp_news.config import load_feeds_config
+from esp_news.embeddings import MissingAPIKeyError
 from esp_news.interests import load_interests_profile
 from esp_news.nodes.digest import (
     DEFAULT_DIGEST_DIR,
@@ -36,6 +43,14 @@ from esp_news.nodes.digest import (
 )
 from esp_news.seen import SeenStore
 from esp_news.tracing import init_tracing
+from esp_news.tts import (
+    PCM_BITS,
+    PCM_CHANNELS,
+    PCM_SAMPLE_RATE,
+    TTSClient,
+    duration_seconds,
+    speech_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +66,9 @@ app = FastAPI(
 # rather than queued — the pipeline is not cheap and the caller can retry.
 _refresh_lock = threading.Lock()
 _refresh_state: dict[str, object] = {"running": False, "last_error": None}
+
+# Shared so the on-disk audio cache is reused across requests.
+_tts = TTSClient()
 
 
 def _load_latest() -> dict:
@@ -166,6 +184,49 @@ def health() -> dict:
         "refreshing": _refresh_state["running"],
         "last_error": _refresh_state["last_error"],
     }
+
+
+@app.get("/audio/{index}.pcm")
+def get_audio(index: int) -> Response:
+    """Raw PCM narration of article ``index`` (0-based) from the current digest.
+
+    24 kHz, 16-bit signed little-endian, mono — the firmware writes these bytes
+    to I2S directly, so no decoder is needed on the device. Synthesis is cached
+    by content, so replaying an article costs nothing.
+
+    Content-Length is always set: the firmware needs to know how much to expect
+    rather than reading until the socket closes.
+    """
+    payload = _load_latest()
+    articles = payload.get("articles", [])
+    if index < 0 or index >= len(articles):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Article {index} out of range (digest has {len(articles)}).",
+        )
+
+    text = speech_text(articles[index])
+    if not text.strip():
+        raise HTTPException(status_code=404, detail="Article has nothing to read.")
+
+    try:
+        audio = _tts.synthesize(text)
+    except MissingAPIKeyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    return Response(
+        content=audio,
+        media_type="audio/L16",
+        headers={
+            "Content-Length": str(len(audio)),
+            "X-Sample-Rate": str(PCM_SAMPLE_RATE),
+            "X-Bits-Per-Sample": str(PCM_BITS),
+            "X-Channels": str(PCM_CHANNELS),
+            "X-Duration-Seconds": f"{duration_seconds(len(audio)):.1f}",
+        },
+    )
 
 
 @app.post("/refresh", status_code=202)
