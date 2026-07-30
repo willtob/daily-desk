@@ -4,7 +4,42 @@ Touch news reader for the scored digest produced by
 `~/dev/esp-news-reporter`. Portrait 172 × 640.
 
 Built on the same driver layer as `PomodoroTimer` / `NotionDisplay` — see
-`~/Desktop/ESP32/esp32-projects/HARDWARE.md` for the board notes.
+`~/Desktop/ESP32/esp32-projects/HARDWARE.md` for the board notes, and
+[CLAUDE.md](CLAUDE.md) for the architecture and the rules worth not
+rediscovering.
+
+## Simulator — use this for UI work
+
+There is a desktop LVGL build in [`sim/`](sim). It compiles the real
+`src/news_ui.cpp` against the real `include/lv_conf.h` at the same 172 × 640
+geometry, so the window matches the panel. A flash cycle is ~23 s plus walking
+over to the board; this is ~2 s.
+
+```bash
+brew install sdl2      # one-time
+cd sim
+make run               # window: mouse = touchscreen, B = BOOT, S = screenshot
+make shot              # headless -> shot.bmp
+```
+
+To view a render as an image (LVGL writes BMP, most tools want PNG):
+
+```bash
+./sim --shot shot.bmp && sips -s format png shot.bmp --out shot.png
+```
+
+Reach screens that need input without touching anything:
+
+```bash
+./sim --shot out.bmp --scroll 900              # scroll the list first
+./sim --shot out.bmp --tap 120                 # open the card at y=120
+./sim --shot out.bmp --tap 120 --swipe right   # open a story, swipe back
+./sim --shot out.bmp --tap 120 --swipe left    # open a story, go to the next
+```
+
+The sample articles cover the cases that break layout — a very long title, a
+one-word title, an accented Spanish headline, an empty summary, and an
+interest area missing from `AREA_STYLES`.
 
 ## Build & flash
 
@@ -14,7 +49,12 @@ Built on the same driver layer as `PomodoroTimer` / `NotionDisplay` — see
 ~/.platformio/penv/bin/pio device monitor # serial @ 115200
 ```
 
-Current size: **RAM 31.6%, Flash 18.0%**.
+Current size: **RAM ~32%, Flash ~21%**.
+
+Don't set `upload_port` — auto-detection matches the board by USB VID:PID and
+a glob is passed to esptool verbatim, which breaks every upload. "No serial
+data received" usually means the board isn't enumerated at all; check
+`ls /dev/cu.usbmodem*` before assuming a fault.
 
 ## The two views
 
