@@ -26,6 +26,14 @@ logger = logging.getLogger(__name__)
 DEFAULT_TOP_N = 10
 DEFAULT_PER_AREA_CAP = 3
 
+# Articles with no summary are dropped from the front page. They score fine —
+# a rolling "Live updates: Today's South Florida news" index page is a perfect
+# semantic match for local news — but there is nothing to read once you open
+# one, which is exactly what the display's detail view is for. Their URLs also
+# tend to carry the date, so the seen store can't suppress them: they'd top
+# every digest forever.
+DEFAULT_MIN_SUMMARY_CHARS = 1
+
 
 @traceable(run_type="chain", name="curate")
 def curate_articles(
@@ -34,19 +42,39 @@ def curate_articles(
     top_n: int = DEFAULT_TOP_N,
     per_area_cap: int | None = DEFAULT_PER_AREA_CAP,
     seen: SeenStore | None = None,
+    min_summary_chars: int = DEFAULT_MIN_SUMMARY_CHARS,
 ) -> list[Article]:
     """Rank, filter and cap scored articles down to the digest's front page.
 
     ``seen`` suppresses articles carried over from earlier digests; pass None
     to disable cross-run suppression. ``per_area_cap`` of None or 0 disables
-    the diversity cap. Returned articles are ordered best-scoring first —
-    grouping for readability happens at render time.
+    the diversity cap. ``min_summary_chars`` of 0 keeps summary-less articles.
+    Returned articles are ordered best-scoring first — grouping for
+    readability happens at render time.
     """
     if not scored:
         logger.info("No articles to curate")
         return []
 
     ranked = sorted(scored, key=lambda a: a.score or 0.0, reverse=True)
+
+    # 0. Drop articles with nothing to read. Done before ranking rather than in
+    #    an earlier node so the corpus stays intact for scoring and debugging.
+    if min_summary_chars > 0:
+        readable = [a for a in ranked if len(a.summary.strip()) >= min_summary_chars]
+        dropped = len(ranked) - len(readable)
+        if dropped:
+            by_source = Counter(
+                a.source
+                for a in ranked
+                if len(a.summary.strip()) < min_summary_chars
+            )
+            logger.info(
+                "Curate: dropped %d articles with no usable summary (%s)",
+                dropped,
+                ", ".join(f"{s}={n}" for s, n in by_source.most_common(4)),
+            )
+        ranked = readable
 
     # 1. Drop anything a previous digest already carried.
     if seen is not None:

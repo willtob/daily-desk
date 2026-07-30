@@ -189,6 +189,12 @@ def _add_curate_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Allow articles already shown in earlier digests to reappear.",
     )
+    parser.add_argument(
+        "--min-summary",
+        type=int,
+        default=1,
+        help="Drop articles whose summary is shorter than this (0 = keep all).",
+    )
 
 
 def _build_client(profile, no_cache: bool) -> EmbeddingClient:
@@ -227,6 +233,7 @@ def curate_main() -> None:
         top_n=args.top,
         per_area_cap=args.per_area_cap,
         seen=seen,
+        min_summary_chars=args.min_summary,
     )
 
     print("\n=== Front page ===")
@@ -278,6 +285,7 @@ def digest_main() -> None:
             similarity_threshold=args.threshold,
             top_n=args.top,
             per_area_cap=args.per_area_cap,
+            min_summary_chars=args.min_summary,
         )
     except MissingAPIKeyError as exc:
         raise SystemExit(f"\n{exc}")
