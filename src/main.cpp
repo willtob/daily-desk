@@ -6,6 +6,7 @@
 #include "i2c_bsp.h"
 #include "wifi_manager.h"
 #include "news_client.h"
+#include "news_audio.h"
 #include "drv/lcd_bl_bsp/lcd_bl_pwm_bsp.h"
 #include "esp_err.h"
 
@@ -30,6 +31,10 @@ void setup()
     /* 5. Digest polling (own task) — falls back to sample data if NEWS_URL
      *    is empty, so the UI is usable before the backend exists. */
     news_client_init();
+
+    /* 6. ES8311 + I2S + narration task. After i2c_master_Init(), which it
+     *    borrows the bus 0 handle from. */
+    news_audio_init();
 }
 
 void loop()

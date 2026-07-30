@@ -18,6 +18,7 @@
 #include <Arduino.h>
 #include "news_ui.h"
 #include "news_client.h"
+#include "news_audio.h"
 #include "wifi_manager.h"
 #include "lvgl.h"
 #include "user_config.h"
@@ -66,6 +67,8 @@ static lv_obj_t *lbl_d_badge;
 static lv_obj_t *lbl_d_title;
 static lv_obj_t *lbl_d_meta;
 static lv_obj_t *lbl_d_summary;
+static lv_obj_t *btn_listen;
+static lv_obj_t *lbl_listen;
 
 /* ── View state ───────────────────────────────────────────────────── */
 static int      selected     = -1;
@@ -170,7 +173,19 @@ static void cb_card(lv_event_t *e)
 
 static void cb_back(lv_event_t *e)
 {
-    if (lv_event_get_code(e) == LV_EVENT_CLICKED) show_list();
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+    /* Leaving a story stops its narration — otherwise audio keeps playing
+     * over a list you're already scrolling through. */
+    if (news_audio_playing) news_audio_stop();
+    show_list();
+}
+
+static void cb_listen(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+    /* Both branches only set a flag; audio_task does the work. */
+    if (news_audio_playing) news_audio_stop();
+    else if (selected >= 0)  news_audio_play(selected);
 }
 
 /* ── Rendering ────────────────────────────────────────────────────── */
@@ -247,6 +262,15 @@ static void ui_timer_cb(lv_timer_t *t)
 
     render_status();
     poll_boot_button();
+
+    /* Track playback state so the button says what it will do next. */
+    if (detail_open) {
+        const char *txt = news_audio_playing ? LV_SYMBOL_STOP "  STOP"
+                        : news_audio_failed  ? LV_SYMBOL_WARNING "  AUDIO FAILED"
+                                             : LV_SYMBOL_PLAY "  LISTEN";
+        lv_label_set_text(lbl_listen, txt);
+        lv_obj_align(lbl_listen, LV_ALIGN_CENTER, 0, 0);
+    }
 }
 
 /* ── Shared style helpers ─────────────────────────────────────────── */
@@ -414,6 +438,22 @@ static void build_detail_view(lv_obj_t *scr)
     strip_chrome(rule);
     lv_obj_set_style_bg_opa(rule, LV_OPA_COVER, LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(rule, CLR_RULE, LV_STATE_DEFAULT);
+
+    /* LISTEN / STOP — above the summary so it's reachable without scrolling
+     * to the bottom of a long story. */
+    btn_listen = lv_btn_create(detail_body);
+    lv_obj_set_size(btn_listen, TEXT_W, 40);
+    lv_obj_set_style_bg_color(btn_listen, CLR_CARD, LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(btn_listen, CLR_CARD_PRESSED, LV_STATE_PRESSED);
+    lv_obj_set_style_border_width(btn_listen, 1, LV_STATE_DEFAULT);
+    lv_obj_set_style_border_color(btn_listen, CLR_ACCENT, LV_STATE_DEFAULT);
+    lv_obj_set_style_shadow_width(btn_listen, 0, LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(btn_listen, 10, LV_STATE_DEFAULT);
+    lv_obj_add_event_cb(btn_listen, cb_listen, LV_EVENT_CLICKED, NULL);
+
+    lbl_listen = make_label(btn_listen, &lv_font_montserrat_16, CLR_ACCENT, 0);
+    lv_label_set_text(lbl_listen, LV_SYMBOL_PLAY "  LISTEN");
+    lv_obj_align(lbl_listen, LV_ALIGN_CENTER, 0, 0);
 
     lbl_d_summary = make_label(detail_body, &lv_font_montserrat_14, CLR_WHITE, TEXT_W);
     lv_label_set_long_mode(lbl_d_summary, LV_LABEL_LONG_WRAP);

@@ -23,6 +23,12 @@ extern "C" {
 
 #define NEWS_REFRESH_INTERVAL_MS  (15 * 60 * 1000)   /* 15 min */
 
+/* Backend root, shared by news_client (digest) and news_audio (narration) so
+ * the host and port are written once. Empty string = run on sample data with
+ * no network. Port 8010, not 8000 — Docker holds 8000 on the Mac. The address
+ * is DHCP and will move; reserve it on the router for unattended use. */
+#define NEWS_BASE_URL  "http://192.168.1.171:8010"
+
 typedef struct {
     char  title[NEWS_TITLE_LEN];
     char  summary[NEWS_SUMMARY_LEN];

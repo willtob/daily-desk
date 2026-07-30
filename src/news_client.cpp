@@ -30,10 +30,8 @@
  *   #define NEWS_URL "http://192.168.1.42:8000/digest.json"
  * Leave empty to run on the built-in sample data.
  * (Plain http:// only — an https:// endpoint needs WiFiClientSecure here.) */
-/* Port 8010, not 8000 — Docker holds 8000 on the Mac. Run the backend with
- * `uv run esp-serve --port 8010`. The address is DHCP and will move; reserve
- * it on the router if the display is meant to run unattended. */
-#define NEWS_URL  "http://192.168.1.171:8010/digest.json"
+/* Derived from NEWS_BASE_URL in news_client.h, shared with news_audio.cpp. */
+#define NEWS_URL  NEWS_BASE_URL "/digest.json"
 
 #define HTTP_TIMEOUT_MS  8000
 
