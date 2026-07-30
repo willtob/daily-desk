@@ -48,15 +48,57 @@ static void disp_flush(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *px
     lv_disp_flush_ready(drv);
 }
 
+/* Headless tap injection, so screenshot mode can reach screens that are only
+ * available after a touch (the detail view). Overrides the mouse when active. */
+static int inject_active = 0, inject_x = 0, inject_y = 0, inject_pressed = 0;
+
 static void mouse_read(lv_indev_drv_t *drv, lv_indev_data_t *data)
 {
     (void)drv;
+    if (inject_active) {
+        data->point.x = inject_x;
+        data->point.y = inject_y;
+        data->state = inject_pressed ? LV_INDEV_STATE_PRESSED
+                                     : LV_INDEV_STATE_RELEASED;
+        return;
+    }
     int x, y;
     uint32_t buttons = SDL_GetMouseState(&x, &y);
     data->point.x = x / SCALE;
     data->point.y = y / SCALE;
     data->state = (buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) ? LV_INDEV_STATE_PRESSED
                                                           : LV_INDEV_STATE_RELEASED;
+}
+
+static void pump(int frames)
+{
+    for (int i = 0; i < frames; i++) { lv_tick_inc(20); lv_timer_handler(); }
+}
+
+/* Press and release at a point, then let animations settle. */
+static void inject_tap(int x, int y)
+{
+    inject_active = 1; inject_x = x; inject_y = y;
+    inject_pressed = 1; pump(3);
+    inject_pressed = 0; pump(3);
+    inject_active = 0;
+    pump(20);            /* 400 ms — covers the 180 ms slide */
+}
+
+/* Drag from x0 to x1 at a fixed y, so swipe gestures can be exercised
+ * headlessly. LVGL needs the movement spread over several reads to classify
+ * it as a gesture rather than a click. */
+static void inject_swipe(int x0, int x1, int y)
+{
+    inject_active = 1; inject_y = y;
+    inject_x = x0; inject_pressed = 1; pump(2);
+    for (int i = 1; i <= 8; i++) {
+        inject_x = x0 + (x1 - x0) * i / 8;
+        pump(1);
+    }
+    inject_pressed = 0; pump(3);
+    inject_active = 0;
+    pump(20);
 }
 
 static void present(void)
@@ -83,10 +125,13 @@ static void save_bmp(const char *path)
 int main(int argc, char **argv)
 {
     const char *shot = NULL;
-    int scroll_to = 0;
+    int scroll_to = 0, tap_y = 0;
+    const char *swipe = NULL;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--shot") && i + 1 < argc)   shot = argv[++i];
         else if (!strcmp(argv[i], "--scroll") && i + 1 < argc) scroll_to = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--tap") && i + 1 < argc)    tap_y = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--swipe") && i + 1 < argc)  swipe = argv[++i];
     }
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
@@ -125,14 +170,19 @@ int main(int argc, char **argv)
 
     if (shot) {
         /* Let the 250 ms refresh callback run at least once so the list is
-         * populated, then optionally scroll before capturing. */
-        for (int i = 0; i < 60; i++) { lv_tick_inc(20); lv_timer_handler(); }
+         * populated, then optionally scroll or tap before capturing. */
+        pump(60);
         if (scroll_to > 0) {
             lv_obj_t *scr = lv_scr_act();
             lv_obj_t *cont = lv_obj_get_child(scr, 0);          /* cont_list */
             lv_obj_t *body = lv_obj_get_child(cont, 2);         /* list_body */
             lv_obj_scroll_to_y(body, scroll_to, LV_ANIM_OFF);
-            for (int i = 0; i < 10; i++) { lv_tick_inc(20); lv_timer_handler(); }
+            pump(10);
+        }
+        if (tap_y > 0) inject_tap(EXAMPLE_LCD_H_RES / 2, tap_y);
+        if (swipe) {
+            if (!strcmp(swipe, "right")) inject_swipe(20, 150, 300);
+            else                          inject_swipe(150, 20, 300);
         }
         save_bmp(shot);
         return 0;

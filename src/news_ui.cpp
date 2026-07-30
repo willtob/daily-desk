@@ -117,12 +117,47 @@ static lv_coord_t score_bar_w(float score)
     return w < 2 ? 2 : w;   /* always show a sliver so the bar reads as a bar */
 }
 
+/* ── Slide transition ─────────────────────────────────────────────────
+ *
+ * Detail slides in over the list from the right and back out the same way,
+ * which is what makes the swipe feel like it's moving a sheet of paper rather
+ * than cutting to a new screen. The list stays visible underneath for the
+ * duration — cont_detail is opaque, so nothing shows through — and is only
+ * hidden once the animation lands, to keep the redraw cost off the panel. */
+#define SLIDE_MS  180
+
+static void anim_x_cb(void *obj, int32_t v)
+{
+    lv_obj_set_x((lv_obj_t *)obj, (lv_coord_t)v);
+}
+
+static void anim_hide_ready_cb(lv_anim_t *a)
+{
+    lv_obj_add_flag((lv_obj_t *)a->var, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void slide(lv_obj_t *obj, lv_coord_t from, lv_coord_t to, bool hide_after)
+{
+    lv_anim_del(obj, anim_x_cb);      /* a fast double-swipe must not stack */
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, obj);
+    lv_anim_set_exec_cb(&a, anim_x_cb);
+    lv_anim_set_values(&a, from, to);
+    lv_anim_set_time(&a, SLIDE_MS);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+    if (hide_after) lv_anim_set_ready_cb(&a, anim_hide_ready_cb);
+    lv_anim_start(&a);
+}
+
 /* ── View switching ───────────────────────────────────────────────── */
 static void show_list(void)
 {
     detail_open = false;
-    lv_obj_add_flag(cont_detail, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(cont_list, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_x(cont_list, 0);
+    slide(cont_detail, 0, EXAMPLE_LCD_H_RES, true);
 }
 
 static void show_detail(int idx)
@@ -149,8 +184,10 @@ static void show_detail(int idx)
     lv_obj_scroll_to_y(detail_body, 0, LV_ANIM_OFF);
 
     detail_open = true;
-    lv_obj_add_flag(cont_list, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(cont_detail, LV_OBJ_FLAG_HIDDEN);
+    /* List stays visible under the incoming sheet; hiding it here would show
+     * the bare screen background through the gap during the slide. */
+    slide(cont_detail, EXAMPLE_LCD_H_RES, 0, false);
 }
 
 /* ── Event callbacks ──────────────────────────────────────────────── */
@@ -178,6 +215,27 @@ static void cb_back(lv_event_t *e)
      * over a list you're already scrolling through. */
     if (news_audio_playing) news_audio_stop();
     show_list();
+}
+
+/* Horizontal swipes. Both scrollable bodies scroll vertically, so left/right
+ * is free and LVGL only reports a gesture when the press didn't become a
+ * scroll — the two can't fight each other. */
+static void cb_gesture(lv_event_t *e)
+{
+    (void)e;
+    if (!detail_open) return;      /* the list only scrolls */
+
+    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+
+    if (dir == LV_DIR_RIGHT) {                       /* back, iOS-style */
+        if (news_audio_playing) news_audio_stop();
+        show_list();
+    } else if (dir == LV_DIR_LEFT) {                 /* next story */
+        if (selected + 1 < news_count) {
+            if (news_audio_playing) news_audio_stop();
+            show_detail(selected + 1);
+        }
+    }
 }
 
 static void cb_listen(lv_event_t *e)
@@ -475,6 +533,12 @@ void news_ui_create(void)
 
     build_list_view(scr);
     build_detail_view(scr);
+
+    /* Gestures are caught at the screen. Children bubble them up, so this one
+     * handler covers the detail body and everything inside it. */
+    lv_obj_add_event_cb(scr, cb_gesture, LV_EVENT_GESTURE, NULL);
+    lv_obj_add_flag(cont_detail, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_add_flag(detail_body, LV_OBJ_FLAG_GESTURE_BUBBLE);
 
     lv_timer_create(ui_timer_cb, 250, NULL);
 }
