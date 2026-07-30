@@ -13,7 +13,7 @@ from esp_news.interests import load_interests_profile
 from esp_news.models import Article
 from esp_news.nodes.curate import curate_articles
 from esp_news.nodes.dedup import dedup_articles
-from esp_news.nodes.digest import write_digest
+from esp_news.nodes.digest import digest_payload, write_digest, write_digest_json
 from esp_news.nodes.ingest import ingest_articles
 from esp_news.nodes.score import score_articles
 from esp_news.seen import SeenStore
@@ -290,7 +290,11 @@ def digest_main() -> None:
         return
 
     path = write_digest(state.digest_markdown, directory=args.out)
+    json_path = write_digest_json(
+        digest_payload(state.curated_articles), directory=args.out
+    )
     print(f"\nWritten to {path}")
+    print(f"          {json_path}  (served by esp-serve)")
 
     # Only record what actually made the digest, and only after it's on disk —
     # a crash mid-run must not silently suppress articles from the next one.
@@ -299,6 +303,29 @@ def digest_main() -> None:
             seen.add(art.url)
         seen.prune()
         seen.save()
+
+
+def serve_main() -> None:
+    """Phase 6: serve the digest to the ESP32 over the LAN."""
+    parser = argparse.ArgumentParser(description="Phase 6 — serve the digest JSON.")
+    parser.add_argument(
+        "--host",
+        default="0.0.0.0",
+        help="Bind address (default 0.0.0.0 so the ESP32 can reach it).",
+    )
+    parser.add_argument("--port", type=int, default=8000, help="Port (default 8000).")
+    parser.add_argument(
+        "--reload", action="store_true", help="Auto-reload on code changes (dev)."
+    )
+    args = parser.parse_args()
+
+    _configure_logging()
+
+    import uvicorn
+
+    print(f"\n  Point the firmware's NEWS_URL at:  http://<this-mac-lan-ip>:{args.port}/digest.json")
+    print(f"  Endpoints: /digest.json  /digest.md  /health  POST /refresh\n")
+    uvicorn.run("esp_news.api:app", host=args.host, port=args.port, reload=args.reload)
 
 
 if __name__ == "__main__":

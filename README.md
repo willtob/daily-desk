@@ -14,6 +14,7 @@ full build plan.
 - [x] Phase 3 — score (fitness function)
 - [x] Phase 4 — curate
 - [x] Phase 5 — digest output (v1 complete)
+- [x] Phase 6 — FastAPI endpoint serving the digest to the ESP32
 
 ## Setup
 Requires [uv](https://docs.astral.sh/uv/).
@@ -88,6 +89,41 @@ silently suppress them from the next one. Use `--no-seen` to ignore it.
 Each entry carries a why-it-scored line — winning area, score, and runner-up.
 That's what makes the digest log useful for tuning `interests.yaml`: when a
 story looks wrong, the line shows whether it won on the area you'd expect.
+
+## Running Phase 6 (serve to the ESP32)
+```bash
+uv run esp-serve                  # binds 0.0.0.0:8000 so the board can reach it
+uv run esp-serve --port 8010      # port 8000 is taken by Docker on this machine
+```
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /digest.json` | the firmware contract; `?limit=` and `?max_summary=` |
+| `GET /digest.md` | today's markdown (falls back to the most recent) |
+| `GET /health` | freshness, age in hours, refresh status, last error |
+| `POST /refresh` | runs the pipeline in the background, returns `202` immediately |
+
+The server reads the last written digest instead of running the pipeline per
+request. A full run takes ~20–30 s and the firmware's HTTP client times out at
+8 s, so an on-request pipeline would guarantee the device never got a response.
+`/digest.json` answers in under 10 ms.
+
+`latest.json` is written via a temp file and atomic rename, so a poll landing
+mid-write can't read a truncated payload.
+
+Defaults (`limit=12`, `max_summary=400`) match the firmware's fixed buffers in
+`news_client.h`, so the device never parses payload it would only discard.
+
+### Pointing the firmware at it
+In `NewsDisplay/src/news_client.cpp`:
+
+```c
+#define NEWS_URL "http://192.168.1.171:8000/digest.json"
+```
+
+That's this Mac's current LAN address — it can change on DHCP renewal, so a
+reserved address or an `.local` hostname is worth setting up if the display is
+meant to keep working unattended.
 
 ## Tracing (LangSmith)
 Set in `.env`:

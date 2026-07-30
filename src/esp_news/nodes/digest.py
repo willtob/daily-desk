@@ -12,6 +12,7 @@ you'd expect, or won on something unrelated.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections import defaultdict
 from datetime import date
@@ -43,12 +44,20 @@ def _runner_up(article: Article) -> tuple[str, float] | None:
     return area, others[area]
 
 
-def _trim(text: str, limit: int = _MAX_SUMMARY_CHARS) -> str:
+def trim_text(text: str, limit: int = _MAX_SUMMARY_CHARS) -> str:
+    """Truncate to at most ``limit`` characters, ellipsis included.
+
+    The ellipsis is budgeted inside the limit, not appended after it —
+    otherwise asking for 80 characters hands back 82, which quietly breaks
+    any caller sizing a buffer from the number it passed in.
+    """
     text = (text or "").strip()
     if len(text) <= limit:
         return text
+    if limit <= 3:
+        return "..."[:limit]
     # Cut on a word boundary so the ellipsis doesn't land mid-word.
-    return text[:limit].rsplit(" ", 1)[0] + "..."
+    return text[: limit - 3].rsplit(" ", 1)[0] + "..."
 
 
 @traceable(run_type="chain", name="digest")
@@ -112,7 +121,7 @@ def render_digest(
                 why += f" · {art.published.date().isoformat()}"
             lines += [why, ""]
 
-            summary = _trim(art.summary)
+            summary = trim_text(art.summary)
             if summary:
                 lines += [summary, ""]
 
@@ -124,6 +133,63 @@ def render_digest(
             lines += ["---", "", f"*No stories today from: {', '.join(missing)}*", ""]
 
     return "\n".join(lines)
+
+
+# Defaults chosen to match the firmware's buffers in news_client.h
+# (NEWS_MAX_ARTICLES 12, NEWS_SUMMARY_LEN 420) so the device never has to
+# discard payload it already spent memory parsing.
+DEFAULT_JSON_LIMIT = 12
+DEFAULT_JSON_SUMMARY_CHARS = 400
+
+
+def digest_payload(
+    curated: list[Article],
+    *,
+    when: date | None = None,
+    limit: int = DEFAULT_JSON_LIMIT,
+    max_summary: int = DEFAULT_JSON_SUMMARY_CHARS,
+) -> dict:
+    """Structured form of the digest, for the API and the ESP32.
+
+    Field names match the ``Article`` model so the firmware can read them
+    straight through with no renaming layer.
+    """
+    return {
+        "generated": (when or date.today()).isoformat(),
+        "count": min(len(curated), limit),
+        "articles": [
+            {
+                "title": a.title,
+                "summary": trim_text(a.summary, max_summary),
+                "source": a.source,
+                "matched_area": a.matched_area or "",
+                "score": round(a.score or 0.0, 4),
+                "url": a.url,
+            }
+            for a in curated[:limit]
+        ],
+    }
+
+
+def write_digest_json(
+    payload: dict,
+    *,
+    directory: str | Path | None = DEFAULT_DIGEST_DIR,
+) -> Path:
+    """Write the payload to ``digests/latest.json`` for the API to serve.
+
+    Always the same filename, not a dated one: the endpoint wants "the current
+    digest", and the dated markdown is what serves as the historical log.
+    """
+    directory = Path(directory) if directory else DEFAULT_DIGEST_DIR
+    directory.mkdir(parents=True, exist_ok=True)
+
+    path = directory / "latest.json"
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=1))
+    tmp.replace(path)   # atomic, so a poll mid-write can't read a half file
+    logger.info("Digest JSON written to %s (%d articles)", path, len(payload["articles"]))
+    return path
 
 
 def write_digest(

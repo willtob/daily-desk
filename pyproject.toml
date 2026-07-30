@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "beautifulsoup4>=4.15.0",
+    "fastapi>=0.141.1",
     "feedparser>=6.0.12",
     "langgraph>=1.2.8",
     "langsmith>=0.10.0",
@@ -14,6 +15,7 @@ dependencies = [
     "pydantic>=2.13.4",
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",
+    "uvicorn>=0.52.0",
 ]
 
 [project.scripts]
@@ -22,6 +24,7 @@ esp-dedup = "esp_news.cli:dedup_main"
 esp-score = "esp_news.cli:score_main"
 esp-curate = "esp_news.cli:curate_main"
 esp-digest = "esp_news.cli:digest_main"
+esp-serve = "esp_news.cli:serve_main"
 
 [build-system]
 requires = ["hatchling"]
