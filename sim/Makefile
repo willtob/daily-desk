@@ -41,6 +41,14 @@ sim: $(OBJS)
 	$(CXX) $(OBJS) $(LDFLAGS) -o $@
 	@echo "built ./sim"
 
+# lv_conf.h decides which fonts and widgets compile at all, so a change to it
+# has to invalidate everything — otherwise enabling a font leaves the stale
+# empty object in place and the link fails with an undefined symbol.
+# Must come after the sim rule: a target listed earlier becomes make's default
+# goal, and $(OBJS) would win.
+LV_CONF := $(PROJ)/include/lv_conf.h
+$(OBJS): $(LV_CONF)
+
 $(OBJDIR)/%.o: /%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@

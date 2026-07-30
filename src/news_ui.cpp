@@ -34,14 +34,36 @@
 #define CLR_RULE          lv_color_hex(0x32325C)
 #define CLR_ACCENT        lv_color_hex(0xE94560)
 
+/* ── Type scale ───────────────────────────────────────────────────────
+ *
+ * Three roles, not five sizes used at random. LVGL ships Montserrat in one
+ * weight only, so hierarchy has to come from size, colour and spacing —
+ * there is no bold to fall back on.
+ *
+ *   META  12  badges, source, score. Letter-spaced when it's a label, which
+ *             is what makes small uppercase text read as a tag rather than as
+ *             shouted body text.
+ *   BODY  14  summary prose in the detail view, the only real reading on the
+ *             device, so it keeps generous leading.
+ *   TITLE 16  list headlines.  DISPLAY 20  detail headline and the header.
+ *
+ * Previously metadata sat at 14 alongside body copy and competed with the
+ * headlines it was supposed to support. */
+#define FONT_META     &lv_font_montserrat_12
+#define FONT_BODY     &lv_font_montserrat_14
+#define FONT_TITLE    &lv_font_montserrat_16
+#define FONT_DISPLAY  &lv_font_montserrat_20
+
+#define META_TRACKING     1   /* letter-space for uppercase labels */
+#define TITLE_LEADING     1   /* headlines run 5-7 lines; default is airy */
+#define BODY_LEADING      4   /* prose wants the opposite */
+
 /* ── Layout ───────────────────────────────────────────────────────── */
 #define PAD          6
 #define HEADER_H     44
 #define BODY_W       (EXAMPLE_LCD_H_RES - 2 * PAD)   /* 160 px */
 #define CARD_PAD     8
 #define TEXT_W       (BODY_W - 2 * CARD_PAD)         /* 144 px */
-#define TITLE_LINES  3
-#define TITLE_H      (TITLE_LINES * 20)              /* montserrat_16 ~20 px/line */
 #define BAR_H        3
 
 /* Cosine scores from the fitness function realistically land in this band;
@@ -368,11 +390,12 @@ static void build_list_view(lv_obj_t *scr)
     strip_chrome(hdr);
     lv_obj_clear_flag(hdr, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *lbl_ttl = make_label(hdr, &lv_font_montserrat_20, CLR_WHITE, 0);
+    lv_obj_t *lbl_ttl = make_label(hdr, FONT_DISPLAY, CLR_WHITE, 0);
+    lv_obj_set_style_text_letter_space(lbl_ttl, META_TRACKING, LV_STATE_DEFAULT);
     lv_label_set_text(lbl_ttl, "NEWS");
     lv_obj_align(lbl_ttl, LV_ALIGN_LEFT_MID, PAD, 0);
 
-    lbl_status = make_label(hdr, &lv_font_montserrat_14, CLR_DIM, 0);
+    lbl_status = make_label(hdr, FONT_META, CLR_DIM, 0);
     lv_label_set_text(lbl_status, "loading...");
     lv_obj_align(lbl_status, LV_ALIGN_RIGHT_MID, -PAD, 0);
 
@@ -423,17 +446,19 @@ static void build_list_view(lv_obj_t *scr)
         lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN,
                               LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-        card_badge[i] = make_label(row, &lv_font_montserrat_14, CLR_DIM, 0);
-        card_score[i] = make_label(row, &lv_font_montserrat_14, CLR_DIM, 0);
+        card_badge[i] = make_label(row, FONT_META, CLR_DIM, 0);
+        lv_obj_set_style_text_letter_space(card_badge[i], META_TRACKING, LV_STATE_DEFAULT);
+        card_score[i] = make_label(row, FONT_META, CLR_DIM, 0);
 
         /* Title — wraps in full, never ellipsised. Height is left as
          * LV_SIZE_CONTENT so the card grows to fit; at 144 px a headline runs
          * to 5-7 lines and clipping it at 3 hid the part that says what the
          * story actually is, which is the whole job of this screen. */
-        card_title[i] = make_label(card[i], &lv_font_montserrat_16, CLR_WHITE, TEXT_W);
+        card_title[i] = make_label(card[i], FONT_TITLE, CLR_WHITE, TEXT_W);
         lv_label_set_long_mode(card_title[i], LV_LABEL_LONG_WRAP);
+        lv_obj_set_style_text_line_space(card_title[i], TITLE_LEADING, LV_STATE_DEFAULT);
 
-        card_source[i] = make_label(card[i], &lv_font_montserrat_14, CLR_DIM, TEXT_W);
+        card_source[i] = make_label(card[i], FONT_META, CLR_DIM, TEXT_W);
         lv_label_set_long_mode(card_source[i], LV_LABEL_LONG_DOT);
 
         /* Score bar — width set per article in render_list() */
@@ -469,7 +494,7 @@ static void build_detail_view(lv_obj_t *scr)
     lv_obj_set_style_radius(btn_back, 10, LV_STATE_DEFAULT);
     lv_obj_add_event_cb(btn_back, cb_back, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t *lbl_back = make_label(btn_back, &lv_font_montserrat_16, CLR_ACCENT, 0);
+    lv_obj_t *lbl_back = make_label(btn_back, FONT_TITLE, CLR_ACCENT, 0);
     lv_label_set_text(lbl_back, LV_SYMBOL_LEFT "  BACK");
     lv_obj_align(lbl_back, LV_ALIGN_CENTER, 0, 0);
 
@@ -485,12 +510,14 @@ static void build_detail_view(lv_obj_t *scr)
     lv_obj_set_scroll_dir(detail_body, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(detail_body, LV_SCROLLBAR_MODE_AUTO);
 
-    lbl_d_badge = make_label(detail_body, &lv_font_montserrat_14, CLR_DIM, TEXT_W);
+    lbl_d_badge = make_label(detail_body, FONT_META, CLR_DIM, TEXT_W);
+    lv_obj_set_style_text_letter_space(lbl_d_badge, META_TRACKING, LV_STATE_DEFAULT);
 
-    lbl_d_title = make_label(detail_body, &lv_font_montserrat_20, CLR_WHITE, TEXT_W);
+    lbl_d_title = make_label(detail_body, FONT_DISPLAY, CLR_WHITE, TEXT_W);
     lv_label_set_long_mode(lbl_d_title, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_line_space(lbl_d_title, TITLE_LEADING, LV_STATE_DEFAULT);
 
-    lbl_d_meta = make_label(detail_body, &lv_font_montserrat_14, CLR_DIM, TEXT_W);
+    lbl_d_meta = make_label(detail_body, FONT_META, CLR_DIM, TEXT_W);
     lv_label_set_long_mode(lbl_d_meta, LV_LABEL_LONG_WRAP);
 
     lv_obj_t *rule = lv_obj_create(detail_body);
@@ -511,13 +538,13 @@ static void build_detail_view(lv_obj_t *scr)
     lv_obj_set_style_radius(btn_listen, 10, LV_STATE_DEFAULT);
     lv_obj_add_event_cb(btn_listen, cb_listen, LV_EVENT_CLICKED, NULL);
 
-    lbl_listen = make_label(btn_listen, &lv_font_montserrat_16, CLR_ACCENT, 0);
+    lbl_listen = make_label(btn_listen, FONT_TITLE, CLR_ACCENT, 0);
     lv_label_set_text(lbl_listen, LV_SYMBOL_PLAY "  LISTEN");
     lv_obj_align(lbl_listen, LV_ALIGN_CENTER, 0, 0);
 
-    lbl_d_summary = make_label(detail_body, &lv_font_montserrat_14, CLR_WHITE, TEXT_W);
+    lbl_d_summary = make_label(detail_body, FONT_BODY, CLR_WHITE, TEXT_W);
     lv_label_set_long_mode(lbl_d_summary, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_line_space(lbl_d_summary, 3, LV_STATE_DEFAULT);
+    lv_obj_set_style_text_line_space(lbl_d_summary, BODY_LEADING, LV_STATE_DEFAULT);
 }
 
 /* ── Entry point — called from lvgl_port_init() under the LVGL lock ── */
