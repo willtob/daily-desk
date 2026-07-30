@@ -16,6 +16,8 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+
+import numpy as np
 from pathlib import Path
 
 from openai import OpenAI
@@ -30,15 +32,48 @@ DEFAULT_AUDIO_DIR = Path(__file__).resolve().parents[2] / "digests" / "audio"
 DEFAULT_TTS_MODEL = "gpt-4o-mini-tts"
 DEFAULT_VOICE = "alloy"
 
-# What OpenAI's "pcm" response format actually is. The firmware's I2S clock
-# must be configured to match, so these numbers are load-bearing on both sides.
-PCM_SAMPLE_RATE = 24000
+# OpenAI's "pcm" response format is fixed at 24 kHz.
+OPENAI_PCM_RATE = 24000
+
+# ...but the device runs at 16 kHz, and that is not negotiable from this side:
+# audio_beep_init() programs the ES8311's internal clock dividers for 16 kHz,
+# and calling i2s_set_clk(24000) on the ESP32 only re-clocks the MCU half. The
+# codec keeps decoding at 16 kHz, and speech comes out garbled — audible as
+# "loud and unintelligible", and completely unaffected by volume.
+#
+# Reprogramming the codec's clock coefficients for 24 kHz is the alternative,
+# but that audio path was hard-won (see the project's CLAUDE.md) and is not
+# worth destabilising to save a resample here.
+PCM_SAMPLE_RATE = 16000
 PCM_BITS = 16
 PCM_CHANNELS = 1
 
 # Long summaries make for long waits and long API calls; the device only ever
 # shows a trimmed summary anyway.
 MAX_SPEECH_CHARS = 800
+
+
+def resample_pcm(raw: bytes, src_rate: int, dst_rate: int) -> bytes:
+    """Resample 16-bit mono PCM by linear interpolation.
+
+    Speech at these rates doesn't warrant a windowed-sinc filter; interpolation
+    is smooth enough that the aliasing it lets through sits well above where
+    intelligibility lives.
+    """
+    if src_rate == dst_rate or not raw:
+        return raw
+
+    samples = np.frombuffer(raw, dtype="<i2").astype(np.float32)
+    out_len = int(len(samples) * dst_rate / src_rate)
+    if out_len < 1:
+        return b""
+
+    resampled = np.interp(
+        np.linspace(0, len(samples) - 1, out_len),
+        np.arange(len(samples)),
+        samples,
+    )
+    return np.clip(np.round(resampled), -32768, 32767).astype("<i2").tobytes()
 
 
 class TTSClient:
@@ -72,7 +107,7 @@ class TTSClient:
         if not self.audio_dir:
             return None
         key = hashlib.sha256(
-            f"{self.model}\x00{self.voice}\x00{text}".encode()
+            f"{self.model}\x00{self.voice}\x00{PCM_SAMPLE_RATE}\x00{text}".encode()
         ).hexdigest()[:24]
         return self.audio_dir / f"{key}.pcm"
 
@@ -99,7 +134,7 @@ class TTSClient:
             input=text,
             response_format="pcm",
         )
-        audio = response.read()
+        audio = resample_pcm(response.read(), OPENAI_PCM_RATE, PCM_SAMPLE_RATE)
         self.api_calls += 1
 
         if path:

@@ -12,6 +12,8 @@ __pycache__/
 # Generated digests (Phase 5), the API payload (Phase 6), and the seen store
 digests/*.md
 digests/*.json
+# Cached TTS audio (Phase 8) — regenerates on demand, ~700 KB per article
+digests/audio/
 
 # macOS
 .DS_Store
