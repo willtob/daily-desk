@@ -65,6 +65,13 @@ static esp_err_t es8311_wr(uint8_t reg, uint8_t val)
     return i2c_master_transmit(es8311_handle, buf, 2, pdMS_TO_TICKS(50));
 }
 
+/* Set ES8311 DAC volume (register 0x32). Safe to call any time after init. */
+void audio_set_dac_volume(unsigned char vol)
+{
+    if (es8311_handle == NULL) return;
+    es8311_wr(0x32, vol);
+}
+
 static esp_err_t es8311_rd(uint8_t reg, uint8_t *val)
 {
     return i2c_master_transmit_receive(es8311_handle, &reg, 1, val, 1,

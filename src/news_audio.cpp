@@ -28,6 +28,27 @@
  * socket isn't read a handful of bytes at a time. */
 #define CHUNK_FRAMES    512
 
+/* ── Volume ───────────────────────────────────────────────────────────────
+ *
+ * THIS is the knob to turn. audio_beep_init() leaves the ES8311 DAC volume at
+ * 0xFF (0 dB, maximum) and the beep copes by generating its square wave at an
+ * amplitude of only 9000 of 32767. Speech arrives near full scale, so at 0xFF
+ * the amplifier and the small MX1.25 speaker are driven flat out — which reads
+ * as *both* too loud and muffled, because overdriving them adds distortion on
+ * top of the level.
+ *
+ * Attenuating in software instead does not help: it shrinks the digital signal
+ * but the analog stage still runs at full gain. Lower the DAC volume here.
+ *
+ * 0xFF = 0 dB, -0.5 dB per step down:
+ *   0xE0 ~ -15.5 dB     0xD0 ~ -23.5 dB     0xC0 ~ -31.5 dB
+ * Too loud/muffled -> lower it. Too quiet -> raise it, a few steps at a time. */
+#define NEWS_AUDIO_DAC_VOLUME    0xC8      /* ~ -27.5 dB */
+
+/* Digital gain is left at unity so there is exactly one volume control.
+ * Only reach for this if the DAC volume alone can't get you there. */
+#define NEWS_AUDIO_GAIN_PERCENT  100
+
 volatile bool news_audio_playing = false;
 volatile int  news_audio_index   = -1;
 volatile bool news_audio_failed  = false;
@@ -81,13 +102,18 @@ static bool stream_article(int index)
     }
 
     int total = http.getSize();
-    Serial.printf("[Audio] streaming %d bytes (~%.1fs)\n",
-                  total, total / (float)(NEWS_AUDIO_SAMPLE_RATE * 2));
+    Serial.printf("[Audio] streaming %d bytes (~%.1fs) gain=%d%% dacvol=0x%02X\n",
+                  total, total / (float)(NEWS_AUDIO_SAMPLE_RATE * 2),
+                  NEWS_AUDIO_GAIN_PERCENT, NEWS_AUDIO_DAC_VOLUME);
 
-    /* The codec is initialised for the beep's 16 kHz; speech is 24 kHz. */
+    /* Same rate the codec was configured for at init — the backend resamples
+     * to match, so this only restates what audio_beep_init() already set. */
     i2s_set_clk(I2S_PORT, NEWS_AUDIO_SAMPLE_RATE,
                 I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_STEREO);
     i2s_zero_dma_buffer(I2S_PORT);
+
+    /* Back off the analog gain before any audio reaches the amplifier. */
+    audio_set_dac_volume(NEWS_AUDIO_DAC_VOLUME);
 
     WiFiClient *stream = http.getStreamPtr();
     size_t written_total = 0;
@@ -111,11 +137,15 @@ static bool stream_article(int index)
         if (got <= 0) break;
         written_total += got;
 
-        /* Widen mono to stereo — the codec is running a 2-channel frame. */
+        /* Widen mono to stereo (the codec runs a 2-channel frame) and apply
+         * playback gain. int32 intermediate so the multiply can't wrap. */
         int frames = got / 2;
         for (int i = 0; i < frames; i++) {
-            stereo_buf[i * 2]     = mono_buf[i];
-            stereo_buf[i * 2 + 1] = mono_buf[i];
+            int32_t s = ((int32_t)mono_buf[i] * NEWS_AUDIO_GAIN_PERCENT) / 100;
+            if (s >  32767) s =  32767;      /* only reachable if gain > 100 */
+            if (s < -32768) s = -32768;
+            stereo_buf[i * 2]     = (int16_t)s;
+            stereo_buf[i * 2 + 1] = (int16_t)s;
         }
 
         size_t written = 0;
