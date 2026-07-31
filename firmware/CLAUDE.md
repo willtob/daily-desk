@@ -4,8 +4,19 @@ Touch news reader for the 172×640 portrait panel. Fetches a scored, curated
 digest over HTTP from the `esp-news-reporter` backend (`~/dev/esp-news-reporter`),
 shows it as a scrollable list, and reads articles aloud through the ES8311 codec.
 
-Board notes: `~/Desktop/ESP32/esp32-projects/HARDWARE.md`.
-Same driver layer and conventions as `../PomodoroTimer` and `../NotionDisplay`.
+This firmware lives at `~/dev/esp-news-reporter/firmware/` — the same repo as
+the Python backend it talks to, since they are one project (the backend's
+`esp-news-plan.md` calls this Phase 7).
+
+Board notes: [`../docs/HARDWARE.md`](../docs/HARDWARE.md) (copy of
+`~/Desktop/ESP32/esp32-projects/HARDWARE.md`). Same driver layer and
+conventions as the sibling projects at
+`~/Desktop/ESP32/ESP32-S3-Touch-LCD-3.49/{PomodoroTimer,NotionDisplay}`.
+
+**LVGL 8.4.0 is not vendored here.** It stays with the Waveshare checkout at
+`~/Desktop/ESP32/ESP32-S3-Touch-LCD-3.49/Arduino_Libraries/lvgl8` (~40 MB,
+shared with the sibling projects) and is referenced by absolute path from
+`platformio.ini` and `sim/Makefile`. On another machine, repoint those two.
 
 ---
 

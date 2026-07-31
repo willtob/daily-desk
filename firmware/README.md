@@ -3,8 +3,10 @@
 Touch news reader for the scored digest produced by
 `~/dev/esp-news-reporter`. Portrait 172 × 640.
 
-Built on the same driver layer as `PomodoroTimer` / `NotionDisplay` — see
-`~/Desktop/ESP32/esp32-projects/HARDWARE.md` for the board notes, and
+Lives in the same repo as the backend it talks to. Built on the same driver
+layer as the `PomodoroTimer` / `NotionDisplay` projects under
+`~/Desktop/ESP32/ESP32-S3-Touch-LCD-3.49/` — see [../docs/HARDWARE.md](../docs/HARDWARE.md)
+for the board notes, and
 [CLAUDE.md](CLAUDE.md) for the architecture and the rules worth not
 rediscovering.
 

@@ -125,6 +125,22 @@ That's this Mac's current LAN address — it can change on DHCP renewal, so a
 reserved address or an `.local` hostname is worth setting up if the display is
 meant to keep working unattended.
 
+## The device (Phases 7–8)
+The ESP32 firmware lives in [firmware/](firmware) — same repo, since it's the
+same project. It fetches `/digest.json`, shows the curated stories on a
+172×640 touch panel, and reads them aloud via `/audio/{i}.pcm`.
+
+Start there with [firmware/CLAUDE.md](firmware/CLAUDE.md); board notes are in
+[docs/HARDWARE.md](docs/HARDWARE.md).
+
+**For UI work, use the desktop simulator** (`firmware/sim/`) rather than
+flashing — it builds the real UI source on the host and can be screenshotted,
+which turns a ~23 s flash-and-squint cycle into ~2 s.
+
+LVGL is not vendored here; it stays with the Waveshare checkout on the Desktop
+and is referenced by absolute path from `firmware/platformio.ini` and
+`firmware/sim/Makefile`.
+
 ## Tracing (LangSmith)
 Set in `.env`:
 ```
