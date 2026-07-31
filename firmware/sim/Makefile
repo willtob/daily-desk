@@ -13,6 +13,8 @@
 # to build/../../... which escapes the build directory and scatters .o files
 # through the source tree — including a junk copy of Arduino_Libraries/.
 PROJ    := $(abspath ..)
+# The one path this build takes from outside the repo — see the [lvgl] section
+# of ../platformio.ini, which holds the device build's copy of it.
 # Overridable: make LVGL_ROOT=/path/to/Arduino_Libraries/lvgl8
 LVGL_ROOT ?= /Users/william.tobin/Desktop/ESP32/ESP32-S3-Touch-LCD-3.49/Arduino_Libraries/lvgl8
 LVGL    := $(LVGL_ROOT)/lvgl

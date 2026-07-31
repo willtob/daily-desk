@@ -83,16 +83,18 @@ otherwise just once a day, from the launchd job at 08:00.
 
 ## Data source
 
-`NEWS_URL` at the top of `src/news_client.cpp` is **empty by default**, which
-makes the firmware load 8 built-in sample articles so the UI is fully usable
-before the backend exists. Point it at the Phase 6 endpoint to go live:
+`NEWS_BASE_URL` in `src/news_client.h` is the backend root, shared by the digest
+and audio modules so host and port are written once. An empty string makes the
+firmware load built-in sample articles instead, so the UI is fully usable with
+no network at all.
 
 ```c
-#define NEWS_URL "http://192.168.1.42:8000/digest.json"
+#define NEWS_BASE_URL "http://192.168.1.171:8010"
 ```
 
-Plain `http://` only — an `https://` endpoint needs `WiFiClientSecure` wired
-into `news_refresh_once()`.
+Port 8010, not 8000 — Docker holds 8000 on the Mac. Plain `http://` only; an
+`https://` endpoint would need `WiFiClientSecure` wired into
+`news_refresh_once()`.
 
 ### JSON contract
 

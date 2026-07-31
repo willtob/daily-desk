@@ -8,8 +8,9 @@ This firmware lives at `~/dev/esp-news-reporter/firmware/` — the same repo as
 the Python backend it talks to, since they are one project (the backend's
 `esp-news-plan.md` calls this Phase 7).
 
-Board notes: [`../docs/HARDWARE.md`](../docs/HARDWARE.md) (copy of
-`~/Desktop/ESP32/esp32-projects/HARDWARE.md`). Same driver layer and
+Board notes: [`../docs/HARDWARE.md`](../docs/HARDWARE.md) — pins and addresses
+only, deliberately not a second copy of the full board notes, which stay at
+`~/Desktop/ESP32/esp32-projects/HARDWARE.md`. Same driver layer and
 conventions as the sibling projects at
 `~/Desktop/ESP32/ESP32-S3-Touch-LCD-3.49/{PomodoroTimer,NotionDisplay}`.
 
