@@ -53,6 +53,7 @@ change, before flashing.
 ./sim --shot out.bmp --tap 120             # tap at y=120 -> opens that card
 ./sim --shot out.bmp --tap 120 --swipe right   # open a story, then swipe back
 ./sim --shot out.bmp --tap 120 --swipe left    # open a story, then next story
+./sim --shot out.bmp --boot                    # press BOOT -> "refreshing..." state
 ```
 
 `--swipe` interpolates the drag over several indev reads, because LVGL needs
@@ -153,6 +154,7 @@ no mutexes. The UI **never** blocks; it sets a request flag and returns.
 | `news_articles[]`, `news_count` | `news_task` | UI |
 | `news_data_version` | `news_task` | UI (change detection) |
 | `news_audio_playing` / `_index` / `_failed` | `audio_task` | UI |
+| `news_rebuilding` | `news_task` | UI (status line) |
 
 **The `data_version` pattern:** the fetcher fills the buffers, then bumps
 `news_data_version` *last*. `ui_timer_cb` compares against the version it last
@@ -232,8 +234,10 @@ Also inherited from the sibling projects: use the legacy `driver/i2s.h` API.
 modules. Empty string = run on built-in sample data with no network.
 
 ```
-GET {base}/digest.json     {"articles":[{title,summary,source,matched_area,score,url}]}
-GET {base}/audio/{i}.pcm   raw PCM: 16 kHz, 16-bit signed LE, mono
+GET  {base}/digest.json     {"articles":[{title,summary,source,matched_area,score,url}]}
+GET  {base}/audio/{i}.pcm   raw PCM: 16 kHz, 16-bit signed LE, mono
+POST {base}/refresh         re-run the pipeline; 202 immediately, work in background
+GET  {base}/health          {"refreshing": bool, ...} — how the device knows it finished
 ```
 
 Field names match the Python `Article` model exactly, so the backend needs no
@@ -246,3 +250,40 @@ cd ~/dev/esp-news-reporter && uv run esp-serve --port 8010
 **Port 8010, not 8000 — Docker holds 8000 on this Mac.** The Mac's LAN address
 is compiled into `NEWS_BASE_URL` and is DHCP; reserve it on the router for
 unattended use.
+
+---
+
+## The BOOT button (GPIO 0)
+
+On the **detail** view it goes back to the list. On the **list** it triggers a
+full manual refresh, and the distinction matters:
+
+| | what it does | how long |
+|---|---|---|
+| `news_client_request_refresh()` | re-GET `digest.json` | ~100 ms |
+| `news_client_request_rebuild()` | `POST /refresh`, wait, then re-GET | 20-30 s |
+
+The backend only rewrites `digest.json` when the pipeline runs — otherwise from
+a launchd job at 08:00, or this button. So the cheap re-fetch redraws the *same
+stories* and reads as a dead button; the BOOT press does the rebuild instead.
+
+`news_rebuild()` blocks `news_task` while it waits, which is fine — the UI never
+calls it, it only sets `rebuild_req` and reads `news_rebuilding` to show
+"refreshing..." in the header. The wait polls `/health` every 2 s and gives up
+after 150 s, with two escape hatches: if `POST /refresh` fails outright it falls
+back to a plain re-fetch (so an older backend still does something useful), and
+if `/health` never reports the run as started within 10 s it stops waiting
+rather than hanging for the full ceiling.
+
+Measured against the real backend: `POST` returns `202 {"status":"started"}`,
+`/health` shows `refreshing: true` within 2 s and flips back to `false` in
+~16 s with a warm embedding cache.
+
+In the simulator, press `B` — or headlessly:
+
+```bash
+./sim --shot refresh.bmp --boot   # captures the "refreshing..." header state
+```
+
+The sim's stub fakes the rebuild on a detached thread for 3 s, so the state is
+visible without waiting the real 30.

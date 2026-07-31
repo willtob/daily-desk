@@ -8,6 +8,7 @@
  *
  *   ./sim              open a window; mouse is the touchscreen, B = BOOT button
  *   ./sim --shot F.bmp render a few frames headlessly, write F.bmp, exit
+ *   ./sim --shot F.bmp --boot   tap BOOT first (list: manual refresh)
  *
  * The screenshot mode is the point: it makes the UI reviewable without
  * physically looking at the board.
@@ -125,13 +126,14 @@ static void save_bmp(const char *path)
 int main(int argc, char **argv)
 {
     const char *shot = NULL;
-    int scroll_to = 0, tap_y = 0;
+    int scroll_to = 0, tap_y = 0, boot = 0;
     const char *swipe = NULL;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--shot") && i + 1 < argc)   shot = argv[++i];
         else if (!strcmp(argv[i], "--scroll") && i + 1 < argc) scroll_to = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--tap") && i + 1 < argc)    tap_y = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--swipe") && i + 1 < argc)  swipe = argv[++i];
+        else if (!strcmp(argv[i], "--boot"))                   boot = 1;
     }
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
@@ -180,6 +182,15 @@ int main(int argc, char **argv)
             pump(10);
         }
         if (tap_y > 0) inject_tap(EXAMPLE_LCD_H_RES / 2, tap_y);
+        /* Press and release BOOT. The UI polls it from the 250 ms timer, so the
+         * press has to be held across several pumps to be seen at all; the
+         * frames after release are what put "refreshing..." on screen. */
+        if (boot) {
+            sim_boot_button_down = 1;
+            pump(20);
+            sim_boot_button_down = 0;
+            pump(20);
+        }
         if (swipe) {
             if (!strcmp(swipe, "right")) inject_swipe(20, 150, 300);
             else                          inject_swipe(150, 20, 300);

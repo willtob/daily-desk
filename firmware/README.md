@@ -72,7 +72,14 @@ Touch drag scrolls; LVGL suppresses the click when a press becomes a drag, so
 scrolling past a card never opens it.
 
 The **BOOT** button (GPIO 0) is wired as: *back to the list* when a story is
-open, *force a refresh* when already on the list.
+open, *manual refresh* when already on the list.
+
+That refresh is the real thing — it asks the backend to re-run the whole
+pipeline (`POST /refresh`), waits for it by polling `/health`, then re-fetches.
+It takes 20-30 s, and the header reads "refreshing..." throughout. Simply
+re-fetching `digest.json` would be near-instant but would redraw the same
+stories, because the backend rewrites that file only when the pipeline runs —
+otherwise just once a day, from the launchd job at 08:00.
 
 ## Data source
 

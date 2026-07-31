@@ -6,6 +6,8 @@
  */
 #include <string.h>
 #include <stdio.h>
+#include <pthread.h>
+#include <unistd.h>
 #include "news_client.h"
 #include "news_audio.h"
 #include "wifi_manager.h"
@@ -40,8 +42,34 @@ news_article_t    news_articles[NEWS_MAX_ARTICLES];
 volatile int      news_count         = 0;
 volatile uint32_t news_data_version  = 0;
 volatile bool     news_fetch_failed  = false;
+volatile bool     news_rebuilding    = false;
 
 void news_client_request_refresh(void) {}
+
+/* On the device this blocks news_task for 20-30 s: POST /refresh, poll /health,
+ * re-GET digest.json. The sim fakes the same state transition on a detached
+ * thread so the "refreshing..." status is actually visible — 3 s, because
+ * nobody wants to wait half a minute to take a screenshot. */
+static void *fake_rebuild(void *arg)
+{
+    (void)arg;
+    sleep(3);
+    news_rebuilding   = false;
+    news_data_version = news_data_version + 1;   /* as if new stories landed */
+    printf("[sim] rebuild done\n");
+    return NULL;
+}
+
+void news_client_request_rebuild(void)
+{
+    if (news_rebuilding) return;
+    news_rebuilding = true;
+    printf("[sim] rebuild requested\n");
+
+    pthread_t t;
+    if (pthread_create(&t, NULL, fake_rebuild, NULL) == 0) pthread_detach(t);
+    else news_rebuilding = false;
+}
 
 /* Representative content: long and short titles, every interest area, an
  * accented Spanish entry, and one summary-less article — the cases that

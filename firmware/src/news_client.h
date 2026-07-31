@@ -42,11 +42,23 @@ extern news_article_t    news_articles[NEWS_MAX_ARTICLES];
 extern volatile int      news_count;
 extern volatile uint32_t news_data_version;  /* bumped last, after a good load */
 extern volatile bool     news_fetch_failed;  /* last HTTP attempt failed */
+extern volatile bool     news_rebuilding;    /* backend is re-running the pipeline */
 
 void news_client_init(void);
 
-/* Ask for an out-of-cycle refresh (set from a UI callback; the task clears it). */
+/* Two different things, both called "refresh" in casual speech:
+ *
+ *   request_refresh   re-GET digest.json. Cheap (~100 ms), but the backend only
+ *                     rewrites that file when the pipeline runs, so between runs
+ *                     it returns exactly what is already on screen.
+ *   request_rebuild   POST /refresh, wait for the pipeline to finish, then
+ *                     re-GET. This is the one that pulls new RSS content, and it
+ *                     takes 20-30 s because feeds and embeddings are slow.
+ *
+ * Both are set from a UI callback and cleared by news_task; the UI never blocks
+ * on either. */
 void news_client_request_refresh(void);
+void news_client_request_rebuild(void);
 
 #ifdef __cplusplus
 }

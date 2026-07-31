@@ -4,8 +4,9 @@ Personalized tech news digest. A LangGraph pipeline that pulls articles from RSS
 feeds, scores them against a personal interest profile using embedding similarity
 (the "fitness function"), and renders a curated markdown digest.
 
-v1 is CLI-only and runs on-demand. See [esp-news-plan.md](esp-news-plan.md) for the
-full build plan.
+Runs on demand from the CLI, every morning at 08:00 via launchd, or on a button
+press from the device — see [When the feeds actually update](#when-the-feeds-actually-update).
+[esp-news-plan.md](esp-news-plan.md) has the full build plan.
 
 ## Status
 - [x] Phase 0 — repo & environment setup
@@ -115,15 +116,55 @@ Defaults (`limit=12`, `max_summary=400`) match the firmware's fixed buffers in
 `news_client.h`, so the device never parses payload it would only discard.
 
 ### Pointing the firmware at it
-In `NewsDisplay/src/news_client.cpp`:
+In `firmware/src/news_client.h`:
 
 ```c
-#define NEWS_URL "http://192.168.1.171:8000/digest.json"
+#define NEWS_BASE_URL "http://192.168.1.171:8010"
 ```
 
 That's this Mac's current LAN address — it can change on DHCP renewal, so a
 reserved address or an `.local` hostname is worth setting up if the display is
 meant to keep working unattended.
+
+## When the feeds actually update
+
+Fetching RSS only happens when the pipeline runs. Nothing polls on its own, so
+there are exactly three ways new stories appear:
+
+| Trigger | What runs |
+|---|---|
+| `uv run esp-digest` | the full graph, by hand |
+| launchd, daily at 08:00 | the same command (see below) |
+| BOOT button on the device | `POST /refresh`, which runs the graph in-process |
+
+`feeds.yaml`'s `lookback_hours: 48` is a filter on each fetch, not a schedule —
+it decides how far back a run looks, not how often runs happen. Likewise
+`NEWS_REFRESH_INTERVAL_MS` (15 min) in the firmware only re-reads the digest the
+backend has already written.
+
+### The 08:00 launchd job
+
+`~/Library/LaunchAgents/com.willtobin.esp-news-digest.plist` runs
+`uv run esp-digest` in this directory every morning at 08:00.
+
+```bash
+launchctl print gui/$UID/com.willtobin.esp-news-digest   # state, run count, last exit
+launchctl kickstart -p gui/$UID/com.willtobin.esp-news-digest   # run it now
+launchctl bootout gui/$UID/com.willtobin.esp-news-digest        # disable
+launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.willtobin.esp-news-digest.plist
+```
+
+Logs: `~/Library/Logs/esp-news-digest.log` (the digest itself, on stdout) and
+`.err` (progress lines — Python's logging writes to stderr, so **content in
+`.err` is normal, not a failure**; check the exit code instead).
+
+Two things the plist depends on: `WorkingDirectory` must stay pointed at this
+repo, because both uv's project resolution and `load_dotenv()`'s search for
+`.env` start from the working directory; and `uv` is invoked by absolute path
+(`/opt/homebrew/bin/uv`) because launchd jobs get no login shell and Homebrew is
+not on their `PATH`. `RunAtLoad` is deliberately false, so loading the agent or
+rebooting doesn't fire an extra run. If the Mac is asleep at 08:00, launchd runs
+the job when it next wakes.
 
 ## The device (Phases 7–8)
 The ESP32 firmware lives in [firmware/](firmware) — same repo, since it's the

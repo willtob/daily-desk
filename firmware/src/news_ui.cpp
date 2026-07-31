@@ -304,7 +304,11 @@ static void render_status(void)
 {
     char buf[32];
 
-    if (news_count > 0) {
+    /* Checked before news_count: a rebuild runs with a full list on screen, and
+     * "10 stories" for 30 s would read as a dead button. */
+    if (news_rebuilding) {
+        snprintf(buf, sizeof(buf), "refreshing...");
+    } else if (news_count > 0) {
         snprintf(buf, sizeof(buf), "%d stories", news_count);
     } else if (news_fetch_failed) {
         snprintf(buf, sizeof(buf), "fetch failed");
@@ -316,15 +320,21 @@ static void render_status(void)
     lv_label_set_text(lbl_status, buf);
 }
 
-/* ── BOOT button: back out of a story, or force a refresh on the list ── */
+/* ── BOOT button (GPIO 0): back out of a story, or rebuild the digest ──
+ *
+ * On the list this asks the backend to re-run the whole pipeline, not just to
+ * re-GET digest.json — the RSS side only updates when the pipeline runs (the
+ * launchd job at 08:00, or this button), so a plain re-fetch would redraw the
+ * same stories and look like the button did nothing. Takes 20-30 s; the status
+ * line says "refreshing" for the duration. */
 static void poll_boot_button(void)
 {
     static bool was_down = false;
     bool down = (digitalRead(BOOT_BUTTON_GPIO) == LOW);
 
     if (down && !was_down) {           /* 250 ms polling is its own debounce */
-        if (detail_open) show_list();
-        else             news_client_request_refresh();
+        if      (detail_open)    show_list();
+        else if (!news_rebuilding) news_client_request_rebuild();
     }
     was_down = down;
 }

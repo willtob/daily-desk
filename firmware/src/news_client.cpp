@@ -33,18 +33,38 @@
 /* Derived from NEWS_BASE_URL in news_client.h, shared with news_audio.cpp. */
 #define NEWS_URL  NEWS_BASE_URL "/digest.json"
 
+/* Pipeline control. POST /refresh returns 202 immediately and runs the graph on
+ * a background thread; GET /health reports whether that thread is still going. */
+#define NEWS_REBUILD_URL  NEWS_BASE_URL "/refresh"
+#define NEWS_HEALTH_URL   NEWS_BASE_URL "/health"
+
 #define HTTP_TIMEOUT_MS  8000
+
+/* A backend run is ~20-30 s (37 feeds plus embeddings). The ceiling is generous
+ * because a cold embedding cache is far slower than a warm one; the device just
+ * shows "refreshing" while it waits. */
+#define REBUILD_POLL_MS      2000
+#define REBUILD_TIMEOUT_MS   150000
+/* If /health never reports the run as started, stop believing it did. */
+#define REBUILD_START_MS     10000
 
 news_article_t    news_articles[NEWS_MAX_ARTICLES];
 volatile int      news_count         = 0;
 volatile uint32_t news_data_version  = 0;
 volatile bool     news_fetch_failed  = false;
+volatile bool     news_rebuilding    = false;
 
 static volatile bool refresh_req = false;
+static volatile bool rebuild_req = false;
 
 void news_client_request_refresh(void)
 {
     refresh_req = true;
+}
+
+void news_client_request_rebuild(void)
+{
+    rebuild_req = true;
 }
 
 /* Copy a JSON string field into a fixed buffer, always NUL-terminated. */
@@ -173,6 +193,95 @@ static bool news_refresh_once(void)
     return true;
 }
 
+/* Ask the backend to re-run the pipeline. Returns true if it accepted the job
+ * (202 started, or 200 already-running — either way something is now running). */
+static bool post_rebuild(void)
+{
+    HTTPClient http;
+    http.setTimeout(HTTP_TIMEOUT_MS);
+    if (!http.begin(NEWS_REBUILD_URL)) {
+        Serial.println("[News] http.begin() failed for /refresh");
+        return false;
+    }
+
+    int code = http.POST("");          /* no body; FastAPI takes none */
+    http.end();
+
+    if (code != 202 && code != HTTP_CODE_OK) {
+        Serial.printf("[News] POST /refresh -> HTTP %d\n", code);
+        return false;
+    }
+    return true;
+}
+
+/* 1 = pipeline running, 0 = idle, -1 = couldn't tell. */
+static int health_running(void)
+{
+    HTTPClient http;
+    http.setTimeout(HTTP_TIMEOUT_MS);
+    if (!http.begin(NEWS_HEALTH_URL)) return -1;
+
+    int code = http.GET();
+    if (code != HTTP_CODE_OK) { http.end(); return -1; }
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, http.getStream());
+    http.end();
+    if (err) return -1;
+
+    return doc["refreshing"].as<bool>() ? 1 : 0;
+}
+
+/* Full manual refresh: kick the backend, wait for it, then re-fetch.
+ *
+ * Runs on news_task, so blocking here is fine — the UI reads news_rebuilding
+ * and keeps redrawing at 250 ms throughout. */
+static void news_rebuild(void)
+{
+    if (wifi_conn_status != WIFI_CONNECTED) {
+        Serial.println("[News] Rebuild skipped — Wi-Fi not connected");
+        news_fetch_failed = true;
+        return;
+    }
+
+    news_rebuilding = true;
+
+    if (!post_rebuild()) {
+        /* Backend unreachable, or too old to have /refresh. A plain re-fetch is
+         * still worth doing — it's what the button used to do. */
+        Serial.println("[News] Rebuild request failed; falling back to re-fetch");
+        news_rebuilding = false;
+        news_fetch_failed = !news_refresh_once();
+        return;
+    }
+
+    Serial.println("[News] Backend rebuilding; waiting for it to finish");
+    uint32_t start = millis();
+    bool saw_running = false;
+
+    while (millis() - start < REBUILD_TIMEOUT_MS) {
+        vTaskDelay(pdMS_TO_TICKS(REBUILD_POLL_MS));
+
+        int r = health_running();
+        if (r == 1) {
+            saw_running = true;
+        } else if (r == 0 && saw_running) {
+            break;                     /* started, and now done */
+        } else if (r < 0) {
+            Serial.println("[News] /health unreadable; re-fetching anyway");
+            break;
+        } else if (!saw_running && millis() - start > REBUILD_START_MS) {
+            /* Accepted but never observed running — either it finished inside
+             * one poll interval or it never started. Either way, stop waiting. */
+            Serial.println("[News] Rebuild never showed as running; re-fetching");
+            break;
+        }
+    }
+
+    news_rebuilding = false;
+    news_fetch_failed = !news_refresh_once();
+}
+
 static void news_task(void *arg)
 {
     (void)arg;
@@ -192,7 +301,14 @@ static void news_task(void *arg)
         uint32_t now = millis();
         bool due = (last_fetch == 0) || (now - last_fetch >= NEWS_REFRESH_INTERVAL_MS);
 
-        if (due || refresh_req) {
+        if (rebuild_req) {
+            /* Manual rebuild wins over a due poll — it ends in a fetch anyway,
+             * and it restarts the interval so the poll doesn't fire on top. */
+            rebuild_req = false;
+            refresh_req = false;
+            news_rebuild();
+            last_fetch = millis();     /* not `now`: the rebuild took ~30 s */
+        } else if (due || refresh_req) {
             refresh_req = false;
             bool ok = news_refresh_once();
             news_fetch_failed = !ok;
