@@ -62,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var panel: NewsPanel!
     private let store = DigestStore(baseURL: resolveBaseURL())
+    private let controller = PanelController()
 
     private static let defaultSize = NSSize(width: 340, height: 700)
     private static let minSize     = NSSize(width: 260, height: 320)
@@ -98,17 +99,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.isMovableByWindowBackground = true
 
-        // Floating behaviour.
-        panel.isFloatingPanel = true
-        panel.level = .floating
         panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-
         panel.backgroundColor = NSColor(Theme.bg)
         panel.minSize = Self.minSize
         panel.isReleasedWhenClosed = false
 
-        panel.contentView = NSHostingView(rootView: RootView(store: store))
+        // Level and collection behaviour come from the placement — see
+        // PanelController. Desktop is the default.
+        controller.panel = panel
+        controller.apply()
+
+        panel.contentView = NSHostingView(
+            rootView: RootView(store: store, controller: controller)
+        )
 
         // Restores position and size across launches; only the first run
         // needs placing, and the top-right corner is where a glanceable
@@ -118,8 +121,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             positionTopRight()
         }
 
-        panel.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        // A desktop widget appearing must not steal focus from whatever you
+        // are typing in — orderFront, not makeKeyAndOrderFront. Floating mode
+        // is an explicit "show me this now", so it may take focus.
+        if controller.placement == .floating {
+            panel.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            panel.orderFront(nil)
+        }
     }
 
     private func positionTopRight() {
@@ -150,6 +160,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.addItem(withTitle: "Reload From Backend",
                         action: #selector(reload),
                         keyEquivalent: "l")
+        appMenu.addItem(withTitle: "Toggle Desktop / Floating",
+                        action: #selector(togglePlacement),
+                        keyEquivalent: "d")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit ESP News",
                         action: #selector(NSApplication.terminate(_:)),
@@ -165,6 +178,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func refresh() { Task { await store.rebuild() } }
     @objc private func reload()  { Task { await store.load() } }
+    @objc private func togglePlacement() { controller.toggle() }
 }
 
 // MARK: - Entry point

@@ -67,7 +67,8 @@ defaults write com.willtobin.esp-news-widget baseURL http://127.0.0.1:8010
 | LISTEN | streams `/audio/{i}.pcm` and plays it |
 | ↻, or `⌘R` | `POST /refresh` — re-runs the whole pipeline, ~30 s |
 | `⌘L` | re-read the digest without re-running anything |
-| Right-click header | refresh, reload, quit |
+| Right-click header | refresh, reload, placement, quit |
+| `⌘D` | desktop ⇄ floating |
 | `⌘Q` | quit |
 | Drag anywhere | move the panel |
 
@@ -76,8 +77,43 @@ than re-fetching `digest.json`: fetching RSS only happens when the pipeline
 runs, so a plain re-fetch would redraw the same stories and look like the
 button did nothing.
 
-The panel floats above other windows, follows you across Spaces, and has no
-Dock icon or app-switcher entry. Its position and size persist across launches.
+## Placement
+
+Two modes, because they are different tools. Toggle with `⌘D` or the header's
+right-click menu; the choice persists.
+
+**Desktop** (the default) is the widget behaviour. The panel sits at the
+wallpaper layer — above the wallpaper, below every ordinary window, exactly
+where Finder draws desktop icons. It never comes forward, never appears in
+`⌘Tab` or Exposé, stays put while Spaces slide past, and casts no window
+shadow. You see it when your desktop is visible and it stays out of the way
+the rest of the time.
+
+**Floating** pins it above everything instead, across Spaces. Useful while
+you are actually reading a story; intrusive otherwise.
+
+Neither mode has a Dock icon or app-switcher entry, and position and size
+persist across launches.
+
+If desktop mode ever leaves you unable to reach the panel, the placement is
+just a default:
+
+```bash
+defaults write com.willtobin.esp-news-widget placement floating
+```
+
+### The isFloatingPanel trap
+
+`NSPanel.isFloatingPanel` is a level setter wearing a Bool's clothing —
+assigning it rewrites `window.level` (`true` → `.floating`, `false` →
+`.normal`). Set it *after* the level and the panel silently drops to layer 0,
+which is indistinguishable from the desktop level having been ignored.
+`PanelController.apply()` sets it first, deliberately.
+
+Window levels are verifiable without screenshots, which is how that bug was
+caught — `CGWindowListCopyWindowInfo` reports the real layer the window server
+assigned. Desktop placement should report the same layer as Finder's wallpaper
+window, currently `-2147483603`.
 
 ## Snapshots
 

@@ -12,6 +12,7 @@ import SwiftUI
 struct RootView: View {
 
     @ObservedObject var store: DigestStore
+    @ObservedObject var controller: PanelController
     @StateObject private var audio = AudioPlayer()
 
     @State private var selected: Int?
@@ -132,6 +133,12 @@ struct RootView: View {
         Button("Refresh now") { Task { await store.rebuild() } }
             .disabled(store.rebuilding)
         Button("Reload digest") { Task { await store.load() } }
+        Divider()
+        Picker("Placement", selection: $controller.placement) {
+            ForEach(PanelController.Placement.allCases, id: \.self) { placement in
+                Text(placement.title).tag(placement)
+            }
+        }
         Divider()
         Button("Quit") { NSApplication.shared.terminate(nil) }
     }
