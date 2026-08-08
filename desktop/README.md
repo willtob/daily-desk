@@ -275,19 +275,29 @@ screencapture -x -o -l $(...window id from CGWindowListCopyWindowInfo...) out.pn
 
 ## What is shared with the firmware, and what is not
 
-The interest-area *keys and labels* are shared with `AREA_STYLES` in
+The interest-area *keys, labels and colours* are shared with `AREA_STYLES` in
 `firmware/src/news_ui.cpp`, as is the score band. **Adding an interest area to
 `interests.yaml` means adding it in both places.** An unknown area falls back
 to a neutral `NEWS` card rather than disappearing.
 
-The colours are deliberately not shared any more. The device paints a small
-badge on a dark card and needs eight hues that separate at badge size; this
-paints the whole card in a colour taken from the wallpaper behind it. Same
-information, different medium.
+The colours used to be deliberately unshared — the device painted a small
+badge on a dark navy card, this painted the whole card — but the firmware has
+since taken this deck wholesale onto the 172×640 panel and paints whole cards
+too, so both now run the same wallpaper palette. A tint that fails on one is a
+bug on the other.
+
+**The deck itself is shared as a design, not as code.** The device rebuilds it
+in LVGL, and two things did not survive the trip: there is no 3D flip and no
+blur, because LVGL 8 has neither, and scaling a card is impossible in practice
+because LVGL renders transformed objects through a full-size intermediate
+buffer it cannot afford. Depth over there is real geometry — narrower, lower
+ledges — plus a slide and a fade. `firmware/CLAUDE.md` has the details.
 
 Type weight diverges for the same reason it always did: LVGL ships Montserrat
 in one weight, so the device builds hierarchy from size and colour alone,
-while the whole San Francisco family is available here.
+while the whole San Francisco family is available here. The device also runs
+its ink opacities a few points higher, because 16-bit colour quantises the
+blend and there is no bold to compensate with.
 
 Audio format is **not** hardcoded — it is read from the `X-Sample-Rate` /
 `X-Bits-Per-Sample` / `X-Channels` headers the backend sends. `tts.py`

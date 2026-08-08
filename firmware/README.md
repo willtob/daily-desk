@@ -58,21 +58,36 @@ a glob is passed to esptool verbatim, which breaks every upload. "No serial
 data received" usually means the board isn't enumerated at all; check
 `ls /dev/cu.usbmodem*` before assuming a fault.
 
-## The two views
+## The three views
 
-**LIST** — fixed header (`NEWS` + status) over a scrollable column of cards,
-best-scoring story first. Each card shows the interest area as a coloured
-badge, the score, a 3-line title (ellipsised), the source, and a score bar
-whose width maps the 0.25–0.60 cosine band to the full card width.
+This is the Mac widget's card deck, rebuilt in LVGL for the 172×640 panel —
+same layout, same wallpaper palette, same interest-area labels. See
+[`../desktop/README.md`](../desktop/README.md) for the deck's design and
+[`CLAUDE.md`](CLAUDE.md) for what LVGL could not reproduce.
 
-**DETAIL** — tap any card. Full untruncated title at 20 pt, source and exact
-score, then the summary in a scrollable body. `BACK` returns to the list.
+**DECK** — fixed header (`NEWS` + status), one story at a time as a card in
+its interest area's colour, three coloured ledges behind it for the rest of
+the digest, and a nav bar with `‹`, a counter and `›`. The card shows the area
+as a badge, the score as a number and as a bar mapping the 0.25–0.60 cosine
+band across the card, the headline, a short excerpt and the source. Flip with
+the nav buttons or by swiping left and right.
+
+**LIST** — swipe up. The whole digest as a scrollable column, best-scoring
+first, in the same card styling but with headlines wrapped in full rather than
+clipped to fit a fixed card. This is where you go when the deck's card cut off
+the part of the headline that said what the story was. Swipe right (or down)
+to go back.
+
+**DETAIL** — tap any card, from either view. Full untruncated title at 20 pt,
+source and exact score, the summary in a scrollable body, and `LISTEN` pinned
+at the bottom so it is reachable without paging to the end. Swipe right to go
+back — to whichever view you opened it from — or swipe left for the next story.
 
 Touch drag scrolls; LVGL suppresses the click when a press becomes a drag, so
 scrolling past a card never opens it.
 
-The **BOOT** button (GPIO 0) is wired as: *back to the list* when a story is
-open, *manual refresh* when already on the list.
+The **BOOT** button (GPIO 0) is wired as: *back* when a story is open,
+*manual refresh* on the deck or the list. It is the widget's ↻ button.
 
 That refresh is the real thing — it asks the backend to re-run the whole
 pipeline (`POST /refresh`), waits for it by polling `/health`, then re-fetches.

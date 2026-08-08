@@ -45,11 +45,55 @@
    MEMORY SETTINGS
  *=========================*/
 
-/*1: use custom malloc/free, 0: use the built-in `lv_mem_alloc()` and `lv_mem_free()`*/
-#define LV_MEM_CUSTOM 0
+/* ── Where LVGL's widget pool lives ───────────────────────────────────
+ *
+ * The deck needs a much bigger pool than the old list did: two full card
+ * faces and three ledges on top of the twelve list cards measure 65,904 bytes
+ * at rest (`sim --shot x.bmp --mem`), where the stock 48K — and even 64K —
+ * simply cannot build the UI.
+ *
+ * **Do not take that out of internal RAM.** Growing the static pool to 128K
+ * links fine and boots fine and then starves the Wi-Fi driver, which needs
+ * internal RAM for its RX buffers and fails at runtime with
+ *
+ *     E wifi: Expected to init 4 rx buffer, actual is 2
+ *     E WiFiGeneric.cpp: esp_wifi_init 0x101: ESP_ERR_NO_MEM
+ *     E STA.cpp: begin(): STA enable failed!
+ *
+ * The panel then shows the whole UI perfectly and never fetches a story,
+ * which does not look like a memory problem at all. Measured: RAM went 40.1%
+ * -> 65.1% at link time, and that 80K was the difference.
+ *
+ * So on the device the pool goes to PSRAM, which the board has 8 MB of and
+ * already uses for the draw buffers (lvgl_port.c). Only widget structs,
+ * styles and label text come from here — the DMA buffer is allocated
+ * separately with MALLOC_CAP_DMA and is unaffected. Widget allocation happens
+ * once at boot, so the ongoing cost is limited to the layer buffers a flip
+ * asks for.
+ *
+ * The simulator keeps the built-in pool, because `lv_mem_monitor()` only
+ * reports anything with LV_MEM_CUSTOM 0 — that is what makes `--mem` able to
+ * measure the UI at all, and the number it gives is still the number that
+ * matters on the device. */
+#ifdef ESP_PLATFORM
+    #define LV_MEM_CUSTOM 1
+#else
+    #define LV_MEM_CUSTOM 0
+#endif
+
 #if LV_MEM_CUSTOM == 0
     /*Size of the memory available for `lv_mem_alloc()` in bytes (>= 2kB)*/
-    #define LV_MEM_SIZE (48U * 1024U)          /*[bytes]*/
+    /* Simulator only. Generous rather than tuned: the headroom above 66K is
+     * not slack — fading a card during a flip drops its opacity below 255,
+     * which makes LVGL render it through a layer, and each of the two cards
+     * in flight can ask for LV_LAYER_SIMPLE_BUF_SIZE (24K).
+     *
+     * Running out does NOT look like an allocation failure. LVGL's
+     * LV_USE_ASSERT_MALLOC handler is a `while(1)`, so the simulator hangs on
+     * the line that allocated, and the device would stop dead inside
+     * news_ui_create() with the backlight already on. If either ever hangs at
+     * startup, check --mem first. */
+    #define LV_MEM_SIZE (128U * 1024U)          /*[bytes]*/
 
     /*Set an address for the memory pool instead of allocating it as a normal array. Can be in external SRAM too.*/
     #define LV_MEM_ADR 0     /*0: unused*/
@@ -59,11 +103,16 @@
         #undef LV_MEM_POOL_ALLOC
     #endif
 
-#else       /*LV_MEM_CUSTOM*/
-    #define LV_MEM_CUSTOM_INCLUDE <stdlib.h>   /*Header for the dynamic memory function*/
-    #define LV_MEM_CUSTOM_ALLOC   malloc
-    #define LV_MEM_CUSTOM_FREE    free
-    #define LV_MEM_CUSTOM_REALLOC realloc
+#else       /*LV_MEM_CUSTOM — the device: pool in PSRAM, see the note above*/
+    #define LV_MEM_CUSTOM_INCLUDE "esp_heap_caps.h"
+    /* Function-like macros because heap_caps_* take the capability mask as an
+     * extra argument. MALLOC_CAP_8BIT alongside SPIRAM because LVGL does
+     * byte-addressed writes into these blocks. */
+    #define LV_MEM_CUSTOM_ALLOC(size) \
+        heap_caps_malloc((size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+    #define LV_MEM_CUSTOM_REALLOC(p, size) \
+        heap_caps_realloc((p), (size), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+    #define LV_MEM_CUSTOM_FREE    heap_caps_free
 #endif     /*LV_MEM_CUSTOM*/
 
 /*Number of the intermediate memory buffer used during rendering and other internal processing mechanisms.
@@ -363,11 +412,11 @@
  *https://fonts.google.com/specimen/Montserrat*/
 #define LV_FONT_MONTSERRAT_8  0
 #define LV_FONT_MONTSERRAT_10 0
-#define LV_FONT_MONTSERRAT_12 1
-#define LV_FONT_MONTSERRAT_14 1
-#define LV_FONT_MONTSERRAT_16 1
+#define LV_FONT_MONTSERRAT_12 0
+#define LV_FONT_MONTSERRAT_14 0
+#define LV_FONT_MONTSERRAT_16 0
 #define LV_FONT_MONTSERRAT_18 0
-#define LV_FONT_MONTSERRAT_20 1
+#define LV_FONT_MONTSERRAT_20 0
 #define LV_FONT_MONTSERRAT_22 0
 #define LV_FONT_MONTSERRAT_24 0
 #define LV_FONT_MONTSERRAT_26 0
@@ -375,11 +424,11 @@
 #define LV_FONT_MONTSERRAT_30 0
 #define LV_FONT_MONTSERRAT_32 0
 #define LV_FONT_MONTSERRAT_34 0
-#define LV_FONT_MONTSERRAT_36 1
+#define LV_FONT_MONTSERRAT_36 0
 #define LV_FONT_MONTSERRAT_38 0
 #define LV_FONT_MONTSERRAT_40 0
 #define LV_FONT_MONTSERRAT_42 0
-#define LV_FONT_MONTSERRAT_44 1
+#define LV_FONT_MONTSERRAT_44 0
 #define LV_FONT_MONTSERRAT_46 0
 #define LV_FONT_MONTSERRAT_48 0
 
@@ -396,10 +445,10 @@
 /*Optionally declare custom fonts here.
  *You can use these fonts as default font too and they will be available globally.
  *E.g. #define LV_FONT_CUSTOM_DECLARE   LV_FONT_DECLARE(my_font_1) LV_FONT_DECLARE(my_font_2)*/
-#define LV_FONT_CUSTOM_DECLARE
+#define LV_FONT_CUSTOM_DECLARE  LV_FONT_DECLARE(news_font_12) LV_FONT_DECLARE(news_font_14) LV_FONT_DECLARE(news_font_16) LV_FONT_DECLARE(news_font_20)
 
 /*Always set a default font*/
-#define LV_FONT_DEFAULT &lv_font_montserrat_14
+#define LV_FONT_DEFAULT &news_font_14
 
 /*Enable handling large font and/or fonts with a lot of characters.
  *The limit depends on the font size, font face and bpp.

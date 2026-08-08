@@ -24,32 +24,47 @@ CC      := cc
 CXX     := c++
 
 INCLUDES := -I. -Istubs -I$(PROJ)/include -I$(PROJ)/src -I$(LVGL) -I$(SDL_PFX)/include
-DEFINES  := -DLV_CONF_INCLUDE_SIMPLE
+# LV_LVGL_H_INCLUDE_SIMPLE: lv_font_conv emits `#include "lvgl/lvgl.h"` without
+# it, and the library is on the include path as lvgl/ rather than its parent.
+DEFINES  := -DLV_CONF_INCLUDE_SIMPLE -DLV_LVGL_H_INCLUDE_SIMPLE
 WARN     := -Wall -Wno-unused-parameter -Wno-unused-function
 
-CFLAGS   := -g -O1 $(WARN) $(INCLUDES) $(DEFINES)
+# -MMD -MP emits a .d file per object listing the headers it included, so a
+# header change rebuilds exactly what depends on it. Not a nicety: raising
+# NEWS_SUMMARY_LEN changes sizeof(news_article_t), and without this the stubs
+# recompiled while news_ui.o kept the old stride — the UI then read the article
+# array at the wrong offsets and rendered convincing garbage rather than
+# failing to build.
+CFLAGS   := -g -O1 -MMD -MP $(WARN) $(INCLUDES) $(DEFINES)
 CXXFLAGS := $(CFLAGS) -std=c++17
 LDFLAGS  := -L$(SDL_PFX)/lib -lSDL2
 
 LVGL_SRC := $(shell find $(LVGL)/src -name '*.c')
 SIM_SRC  := $(abspath sim_main.c) $(abspath stubs/sim_stubs.c)
+# The generated Montserrat builds (tools/gen_fonts.sh). Wildcarded rather than
+# listed, so adding a size doesn't need an edit here as well as in lv_conf.h.
+FONT_SRC := $(wildcard $(PROJ)/src/fonts/*.c)
 UI_SRC   := $(PROJ)/src/news_ui.cpp
 
 OBJDIR   := build
 # Sources are absolute, so stripping the leading / keeps every object inside
 # build/ regardless of where the source lives.
-OBJS     := $(patsubst /%.c,$(OBJDIR)/%.o,$(LVGL_SRC) $(SIM_SRC)) \
+OBJS     := $(patsubst /%.c,$(OBJDIR)/%.o,$(LVGL_SRC) $(SIM_SRC) $(FONT_SRC)) \
             $(patsubst /%.cpp,$(OBJDIR)/%.o,$(UI_SRC))
 
 sim: $(OBJS)
 	$(CXX) $(OBJS) $(LDFLAGS) -o $@
 	@echo "built ./sim"
 
-# lv_conf.h decides which fonts and widgets compile at all, so a change to it
-# has to invalidate everything — otherwise enabling a font leaves the stale
-# empty object in place and the link fails with an undefined symbol.
-# Must come after the sim rule: a target listed earlier becomes make's default
+# Header dependencies from the .d files above. Both this and the lv_conf rule
+# must come after the sim rule: a target listed earlier becomes make's default
 # goal, and $(OBJS) would win.
+-include $(OBJS:.o=.d)
+
+# lv_conf.h still gets an explicit edge. It decides which fonts and widgets
+# compile at all, and it has to invalidate everything even on the first build,
+# before any .d file exists — otherwise enabling a font leaves the stale empty
+# object in place and the link fails with an undefined symbol.
 LV_CONF := $(PROJ)/include/lv_conf.h
 $(OBJS): $(LV_CONF)
 

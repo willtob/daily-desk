@@ -14,14 +14,19 @@
 //  light, saturated cards is what both reference designs do, and it is what
 //  lets a card read as a lit object rather than as a coloured rectangle.
 //
-//  This diverges from firmware/src/news_ui.cpp on purpose, and it is the one
-//  place the two readers are allowed to disagree. What must stay in sync is
-//  the *set of interest areas and their labels* — see AreaStyle.
+//  These colours are now shared with firmware/src/news_ui.cpp. They used to
+//  diverge on purpose — the device painted a small badge on a dark navy card
+//  and needed eight hues that separate at badge size — but the firmware has
+//  since taken this deck wholesale and paints whole cards in the tint too, so
+//  it needs the same wallpaper palette to do it. Keys, labels and colours all
+//  have to stay in sync now; see AreaStyle.
 //
-//  The other divergence is weight. LVGL ships Montserrat in a single weight,
-//  so the device builds hierarchy from size and colour alone. Here the whole
-//  San Francisco family is available, so the headline can carry the card by
-//  itself the way it does in the reference layouts.
+//  What still diverges is weight. LVGL ships Montserrat in a single weight, so
+//  the device builds hierarchy from size and colour alone. Here the whole San
+//  Francisco family is available, so the headline can carry the card by itself
+//  the way it does in the reference layouts. The device also runs the ink
+//  opacities a little higher than the values below, because 16-bit colour
+//  quantises the blend and there is no bold to compensate with.
 //
 
 import SwiftUI
@@ -102,13 +107,13 @@ enum Theme {
 /// Badge text and card tint for an interest area.
 ///
 /// The keys must match `matched_area` from the Python score node, and the
-/// labels are shared with `AREA_STYLES` in firmware/src/news_ui.cpp —
-/// **adding an area to interests.yaml means adding it in both places.** The
-/// colours are not shared: the device paints a badge on a dark card, this
-/// paints the whole card, and every tint here comes out of the wallpaper.
+/// labels *and colours* are shared with `AREA_STYLES` in
+/// firmware/src/news_ui.cpp — **adding an area to interests.yaml means adding
+/// it in both places.** Both readers now paint the whole card in the tint, so
+/// a colour that only works on one of them is a bug on the other.
 ///
 /// Labels are abbreviated because they have to survive a narrow column. The
-/// device has 144 px; this card has about 250.
+/// device has 140 px; this card has about 250.
 struct AreaStyle {
     let label: String
     let tint: Color

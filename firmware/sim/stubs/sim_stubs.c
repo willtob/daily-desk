@@ -73,23 +73,42 @@ void news_client_request_rebuild(void)
 
 /* Representative content: long and short titles, every interest area, an
  * accented Spanish entry, and one summary-less article — the cases that
- * actually break layout. */
+ * actually break layout.
+ *
+ * The first two summaries are real Phase 9 output at full length (~800 chars),
+ * because that is now the common case and it is the one that decides whether
+ * the detail view is readable or a wall. The shorter ones below are kept as
+ * the fallback case: sources that 403 still show their RSS blurb. */
 void news_client_init(void)
 {
     struct { const char *title, *source, *area; float score; const char *summary; } s[] = {
         { "Spain's three worst wildfires since 1961 happened in last two years",
           "The Local Spain", "spain", 0.6103f,
-          "The wildfire that engulfed Spain's Avila region, northwest of the capital "
-          "Madrid, is now considered the largest in the country's modern history, with "
-          "around 50,000 hectares burned, the government said this week." },
+          "Spain’s three largest recorded wildfires — “the worst on record” — happened in two "
+          "years, according to the General Statistics on Forest Fires (EGIF), whose "
+          "records go back to 1961. The biggest was in Larouco, Ourense, on August 13, "
+          "2025, where provisional figures say 37,765 hectares burned; Spain's 2025 fire "
+          "season also devastated nearly 400,000 hectares and caused four deaths. In "
+          "July 2026, a fire in La Mierla, Guadalajara, burned 32,000 hectares, while "
+          "the Burgohondo fires in Avila and Madrid forced evacuations in more than a "
+          "dozen towns before thousands of residents were allowed home as firefighters "
+          "worked to contain about 50,000 hectares of damage." },
         { "Dili raises $21.7M to bring AI compliance to the infrastructure boom",
           "TechCrunch", "startup_vc", 0.5982f,
           "The Series A was led by Khosla Ventures, with participation from Allianz, "
           "Rebel Fund, and Y Combinator's Garry Tan." },
         { "El inicio de la larga ola de calor trae de nuevo incendios forestales en Catalunya",
           "La Vanguardia Barcelona", "spain", 0.5935f,
-          "El fuego confina varias horas 3.600 vecinos en el Baix Penedes y en Canyelles, "
-          "en el Garraf." },
+          "El inicio de otra larga ola de calor ha reactivado este mi\u00e9rcoles varios "
+          "incendios forestales en Catalunya, con dos focos entre el Alt Camp, el Baix "
+          "Pened\u00e8s y el Garraf y un tercero en el Pic de Sal\u00f2ria, en Os de Civ\u00eds. \u00bfPor "
+          "qu\u00e9? Unos "
+          "3.600 vecinos fueron confinados de forma preventiva y temporal, y los "
+          "incendios del Alt Camp-Baix Pened\u00e8s y de Canyelles — la s\u00e9ptima jornada — a lo "
+          "largo de la tarde gracias al trabajo de los Bombers de la Generalitat. El "
+          "fuego de Montferri y Bonastre afect\u00f3 unas doce hect\u00e1reas (da\u00f1os de 12.000\u20ac), el de "
+          "Canyelles quem\u00f3 un par de hect\u00e1reas y se dio por estabilizado. Ma\u00f1ana jueves "
+          "el plan Alfa de riesgo extremo se duplicar\u00e1 hasta 102 municipios." },
         { "The lineage behind 69% of open models was never verified. Cisco just "
           "fingerprinted almost 900 for free",
           "VentureBeat", "ai_open_source", 0.5648f,

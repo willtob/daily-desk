@@ -17,7 +17,12 @@ extern "C" {
  * LV_MEM_SIZE heap, and 12 is already more than you'd scroll on a phone. */
 #define NEWS_MAX_ARTICLES   12
 #define NEWS_TITLE_LEN      112
-#define NEWS_SUMMARY_LEN    420
+/* 960, not 420: Phase 9 replaced the RSS blurb with an LLM summary written to
+ * an ~800-character target, and the backend's digest_payload trims to 900. A
+ * 420-byte buffer would cut those back into the teasers the phase set out to
+ * get rid of. Costs 12 x 960 = 11.5 KB of static RAM, which is nothing against
+ * 8 MB of PSRAM — the detail body already scrolls, so nothing else changes. */
+#define NEWS_SUMMARY_LEN    960
 #define NEWS_SOURCE_LEN     28
 #define NEWS_AREA_LEN       24
 
@@ -27,7 +32,7 @@ extern "C" {
  * the host and port are written once. Empty string = run on sample data with
  * no network. Port 8010, not 8000 — Docker holds 8000 on the Mac. The address
  * is DHCP and will move; reserve it on the router for unattended use. */
-#define NEWS_BASE_URL  "http://192.168.1.171:8010"
+#define NEWS_BASE_URL  "http://192.168.1.187:8010"
 
 typedef struct {
     char  title[NEWS_TITLE_LEN];
