@@ -1,8 +1,11 @@
 //
-//  DetailView.swift — one story: headline, provenance, summary, narration.
+//  DetailView.swift — one story, opened out of its card.
 //
-//  Port of build_detail_view(). The Listen button says what it will do next
-//  rather than what is happening, same as the device's.
+//  Same colour as the card it came from, edge to edge. That is the whole
+//  continuity trick: the card grows into the story rather than being replaced
+//  by a screen, so on a panel this small you never lose track of where you
+//  were. The reference design does the same thing — tap a yellow card, get a
+//  yellow story.
 //
 
 import AppKit
@@ -17,7 +20,7 @@ struct DetailView: View {
 
     @ObservedObject var audio: AudioPlayer
 
-    /// See ListView.scrollable — snapshot mode only.
+    /// See Scrollable — snapshot mode only.
     var scrollable = true
 
     private var style: AreaStyle { AreaStyle.forArea(article.matchedArea) }
@@ -27,53 +30,60 @@ struct DetailView: View {
     var body: some View {
         VStack(spacing: 0) {
 
-            // Back row. The device gets a swipe; here the button carries the
-            // same job and the Escape key does it without aiming.
+            // Back and badge share the top row, which keeps the story's own
+            // headline as the first thing you read.
             HStack(spacing: 8) {
                 Button(action: onBack) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text("BACK")
-                            .tracking(Theme.metaTracking)
-                    }
-                    .font(.system(size: Theme.metaSize, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(style.tint)
+                        .frame(width: 22, height: 22)
+                        .background(Circle().fill(Theme.ink))
                 }
                 .buttonStyle(.plain)
 
-                Spacer()
+                Spacer(minLength: 4)
 
                 Text(style.label)
-                    .font(.system(size: Theme.metaSize, weight: .semibold))
+                    .font(.system(size: Theme.metaSize, weight: .bold))
                     .tracking(Theme.metaTracking)
-                    .foregroundStyle(style.color)
-            }
-            .padding(.horizontal, Theme.pad)
-            .padding(.vertical, 8)
+                    .foregroundStyle(style.tint)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Theme.ink))
 
-            Divider().overlay(Theme.rule)
+                Text(String(format: "%.2f", article.score))
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Theme.ink)
+            }
+            .padding(.horizontal, Theme.cardPad)
+            .padding(.top, Theme.pad)
+            .padding(.bottom, 8)
 
             Scrollable(scrollable) {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 8) {
 
                     Text(article.title)
                         .font(.system(size: Theme.displaySize, weight: .bold))
-                        .foregroundStyle(Theme.white)
+                        .foregroundStyle(Theme.ink)
                         .lineSpacing(Theme.titleLeading)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Text("\(article.source)  |  \(String(format: "%.3f", article.score))")
+                    Text(article.source)
                         .font(.system(size: Theme.metaSize))
                         .tracking(Theme.metaTracking)
-                        .foregroundStyle(Theme.dim)
+                        .foregroundStyle(Theme.inkSoft(0.62))
 
-                    Divider().overlay(Theme.rule)
+                    Rectangle()
+                        .fill(Theme.ink.opacity(0.18))
+                        .frame(height: 1)
+                        .padding(.vertical, 2)
 
                     // The empty case is real: a fetch failure leaves the RSS
                     // summary, and some feeds ship nothing worth showing.
                     Text(article.summary.isEmpty ? "(no summary in the feed)" : article.summary)
                         .font(.system(size: Theme.bodySize))
-                        .foregroundStyle(Theme.white.opacity(0.92))
+                        .foregroundStyle(Theme.inkSoft(0.82))
                         .lineSpacing(Theme.bodyLeading)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -89,14 +99,18 @@ struct DetailView: View {
                                     .tracking(Theme.metaTracking)
                                 Image(systemName: "arrow.up.right")
                             }
-                            .font(.system(size: Theme.metaSize, weight: .semibold))
-                            .foregroundStyle(Theme.accent)
+                            .font(.system(size: Theme.metaSize, weight: .bold))
+                            .foregroundStyle(Theme.ink)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Capsule().stroke(Theme.ink.opacity(0.45), lineWidth: 1))
                         }
                         .buttonStyle(.plain)
                         .padding(.top, 2)
                     }
                 }
-                .padding(Theme.pad)
+                .padding(.horizontal, Theme.cardPad)
+                .padding(.bottom, Theme.pad)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: .infinity, alignment: .top)
@@ -107,7 +121,7 @@ struct DetailView: View {
 
             listenButton
         }
-        .background(Theme.bg)
+        .background(style.tint)
     }
 
     private var listenButton: some View {
@@ -118,11 +132,13 @@ struct DetailView: View {
                 Image(systemName: buttonIcon)
                 Text(buttonLabel).tracking(Theme.metaTracking)
             }
-            .font(.system(size: Theme.metaSize, weight: .semibold))
-            .foregroundStyle(audio.failed && !isThisPlaying ? Theme.accent : Theme.white)
+            .font(.system(size: Theme.metaSize, weight: .bold))
+            .foregroundStyle(style.tint)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
-            .background(isThisPlaying ? Theme.accent.opacity(0.35) : Theme.cardHover)
+            .background(audio.failed && !isThisPlaying
+                        ? Theme.ink.opacity(0.72)
+                        : Theme.ink)
         }
         .buttonStyle(.plain)
     }

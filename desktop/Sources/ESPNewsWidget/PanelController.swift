@@ -69,8 +69,21 @@ final class PanelController: ObservableObject {
 
         switch placement {
         case .desktop:
+            // One level *above* the icons, not level with them.
+            //
+            // Finder draws desktop icons in a full-screen window at exactly
+            // kCGDesktopIconWindow. Sitting at the same level loses the tie
+            // twice over: the icons paint on top of the widget, and Finder's
+            // window — being full-screen — swallows every click in the
+            // region before it can reach us. The widget looks present and is
+            // completely inert, and no amount of fixing event handling on
+            // this side helps, because no event ever arrives.
+            //
+            // +1 is still astronomically below kCGNormalWindowLevel (0), so
+            // every ordinary window stays in front and this is still "on the
+            // desktop". It just stops being underneath the desktop.
             panel.level = NSWindow.Level(
-                rawValue: Int(CGWindowLevelForKey(.desktopIconWindow))
+                rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1
             )
             // .stationary keeps it pinned while Spaces slide past, which is
             // what makes it read as part of the desktop rather than as a
@@ -89,5 +102,41 @@ final class PanelController: ObservableObject {
 
     func toggle() {
         placement = (placement == .desktop) ? .floating : .desktop
+    }
+
+    // MARK: - Dragging
+    //
+    // Done by hand because AppKit's isMovableByWindowBackground cannot be
+    // used here: it makes every mouse-down in the widget a window drag and
+    // kills all interaction (see ClickThroughHostingView).
+    //
+    // The positions come from NSEvent.mouseLocation, in screen coordinates,
+    // rather than from the gesture's own translation. A SwiftUI drag reports
+    // movement relative to the window, and this gesture *moves the window* —
+    // so feeding translation back in makes the widget chase the cursor and
+    // skitter across the screen. Screen coordinates do not move under us.
+
+    private var dragAnchor: (window: NSPoint, mouse: NSPoint)?
+
+    func dragChanged() {
+        guard let panel else { return }
+
+        let mouse = NSEvent.mouseLocation
+        let anchor = dragAnchor ?? (window: panel.frame.origin, mouse: mouse)
+        dragAnchor = anchor
+
+        panel.setFrameOrigin(NSPoint(
+            x: anchor.window.x + (mouse.x - anchor.mouse.x),
+            y: anchor.window.y + (mouse.y - anchor.mouse.y)
+        ))
+    }
+
+    func dragEnded() {
+        dragAnchor = nil
+        // setFrameOrigin does not trigger the autosave that a user-driven
+        // move would, so the position has to be written explicitly or it is
+        // forgotten on the next launch.
+        guard let panel, !panel.frameAutosaveName.isEmpty else { return }
+        panel.saveFrame(usingName: panel.frameAutosaveName)
     }
 }

@@ -1,21 +1,20 @@
 //
-//  main.swift — the floating panel that hosts the reader.
+//  main.swift — the window the widget lives in.
 //
-//  This is the desktop counterpart to the ESP32 display: same digest, same
-//  backend, same two-view reader, but pinned to a corner of the Mac instead
-//  of sitting on a 172x640 panel on the desk.
+//  The desktop counterpart to the ESP32 display: same digest, same backend,
+//  same scores, but a 288x300 card deck on the wallpaper instead of a 172x640
+//  panel on the desk.
 //
 //  Three decisions worth knowing about:
 //
 //  * Accessory activation policy — no Dock icon, no app switcher entry. A
 //    widget that steals a Dock slot is a small app, not a widget.
-//  * A real NSPanel at .floating level, not a borderless NSWindow. It keeps
-//    the digest above whatever you are working in, follows you across Spaces,
-//    and does not disappear when the app deactivates.
+//  * An NSPanel rather than a plain NSWindow, so it can sit across Spaces and
+//    not vanish when the app deactivates. Where it sits in the window stack
+//    is PanelController's business, not this file's.
 //  * The app *does* activate on click. A .nonactivatingPanel would feel
 //    lighter, but then the main menu is never the active menu and Cmd-Q
-//    silently does nothing — with the traffic lights hidden, that leaves no
-//    way to quit.
+//    silently does nothing — with no chrome at all, that leaves no way out.
 //
 
 import AppKit
@@ -45,30 +44,41 @@ private func resolveBaseURL() -> URL {
 
 // MARK: - Panel
 
-/// A borderless-looking panel that can still take key input.
+/// A borderless panel that can still take key input.
 ///
-/// `canBecomeKey` has to be overridden: a panel whose title bar is hidden is
-/// treated as chrome-less, and without this the arrow keys and Escape never
-/// reach SwiftUI.
+/// `canBecomeKey` has to be overridden: AppKit will not make a chrome-less
+/// window key on its own, and without this the arrow keys and Escape never
+/// reach SwiftUI. It still only applies in floating placement — a window at
+/// the wallpaper layer never becomes key at all, which is why the deck has
+/// on-screen buttons.
 final class NewsPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 }
 
-/// A hosting view that responds to the very first click.
+/// A hosting view that lets clicks through to SwiftUI.
 ///
-/// This is what makes a desktop widget clickable at all. An accessory app
-/// sitting at the wallpaper layer is never the active application, so *every*
-/// click on it is a "first mouse" click — and AppKit's default is to swallow
-/// that click to activate the app instead of delivering it to the view.
+/// Two separate things conspire to eat every click in a widget like this, and
+/// both have to be undone. They look identical from the outside — the thing
+/// drags around the desktop perfectly and not one button inside it works —
+/// which is why fixing only the first one appears to do nothing at all.
 ///
-/// The symptom is peculiar enough to be worth naming: dragging the panel
-/// works fine, because window-background dragging is handled by AppKit at the
-/// window level and needs no activation, while every button and card inside
-/// is dead. It looks like the content froze after a drag. It did not — the
-/// content had never been receiving clicks.
+/// **First mouse.** An accessory app at the wallpaper layer is never the
+/// active application, so every click on it is a "first mouse" click, and
+/// AppKit's default is to swallow that click to activate the app rather than
+/// deliver it to the view.
+///
+/// **Window dragging.** `NSHostingView.mouseDownCanMoveWindow` is `true`, and
+/// a hit test anywhere in the content returns the hosting view itself — there
+/// are no per-control subviews, because SwiftUI routes events internally. So
+/// with `isMovableByWindowBackground` set, AppKit takes *every* mouse-down in
+/// the entire widget as the start of a window drag and consumes it before
+/// SwiftUI sees anything. Overriding this to `false` is what makes the deck
+/// clickable; dragging is reimplemented as a gesture in PanelController.
 final class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override var mouseDownCanMoveWindow: Bool { false }
 
     required init(rootView: Content) { super.init(rootView: rootView) }
 
@@ -85,9 +95,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = DigestStore(baseURL: resolveBaseURL())
     private let controller = PanelController()
 
-    private static let defaultSize = NSSize(width: 340, height: 700)
-    private static let minSize     = NSSize(width: 260, height: 320)
-    private static let autosave    = "ESPNewsPanel"
+    // One card plus its stack, and nothing else. The list this replaced
+    // needed 700 px to be worth reading; a deck needs the height of the card
+    // on top, which is what makes it small enough to leave on the desktop.
+    private static let defaultSize = NSSize(width: 288, height: 300)
+    private static let minSize     = NSSize(width: 252, height: 250)
+    // Bumped when the deck replaced the list: the saved frame from the tall
+    // list panel would otherwise restore a 700 px window around a 300 px UI.
+    private static let autosave    = "ESPNewsDeck"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -105,25 +120,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Panel
 
     private func buildPanel() {
+        // Borderless, not a titled window with its chrome hidden.
+        //
+        // Hiding the title bar is not the same as not having one. With
+        // .fullSizeContentView the content view does get the whole frame
+        // either way — that part is fine — but a .titled window still reports
+        // `safeAreaInsets.top == 32` to whatever is inside it, hidden title
+        // bar or not, and SwiftUI dutifully lays out below it. Borderless
+        // reports 0. (Both measured; neither is documented.)
+        //
+        // With an opaque window background the inset is invisible: the widget
+        // just starts a little lower than its frame. Against a transparent
+        // window it is a bite out of the top. .ignoresSafeArea() is not the
+        // fix — it pushes the header up into the strip AppKit still treats as
+        // title bar, where it is simply not drawn. Nothing here wants a title
+        // bar at all, so the honest fix is not to ask for one.
         panel = NewsPanel(
             contentRect: NSRect(origin: .zero, size: Self.defaultSize),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            styleMask: [.borderless, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
 
-        // Chrome off: the panel's own header row is the title bar.
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
-        panel.standardWindowButton(.closeButton)?.isHidden = true
-        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        panel.standardWindowButton(.zoomButton)?.isHidden = true
-        panel.isMovableByWindowBackground = true
+        // Deliberately off. It is the obvious way to make a chrome-less
+        // window draggable and it silently costs you every click in the
+        // widget — see ClickThroughHostingView. RootView drags it instead.
+        panel.isMovableByWindowBackground = false
 
         panel.hidesOnDeactivate = false
-        panel.backgroundColor = NSColor(Theme.bg)
         panel.minSize = Self.minSize
         panel.isReleasedWhenClosed = false
+
+        // The window draws nothing; RootView paints its own rounded shell.
+        // AppKit's window corner radius is the small one it uses for
+        // documents, and on a desktop already showing Calendar and Weather at
+        // a much rounder radius, that difference is most of what separates
+        // "widget" from "a window someone left open".
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
 
         // Level and collection behaviour come from the placement — see
         // PanelController. Desktop is the default.
