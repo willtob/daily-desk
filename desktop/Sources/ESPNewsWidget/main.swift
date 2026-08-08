@@ -55,6 +55,27 @@ final class NewsPanel: NSPanel {
     override var canBecomeMain: Bool { true }
 }
 
+/// A hosting view that responds to the very first click.
+///
+/// This is what makes a desktop widget clickable at all. An accessory app
+/// sitting at the wallpaper layer is never the active application, so *every*
+/// click on it is a "first mouse" click — and AppKit's default is to swallow
+/// that click to activate the app instead of delivering it to the view.
+///
+/// The symptom is peculiar enough to be worth naming: dragging the panel
+/// works fine, because window-background dragging is handled by AppKit at the
+/// window level and needs no activation, while every button and card inside
+/// is dead. It looks like the content froze after a drag. It did not — the
+/// content had never been receiving clicks.
+final class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    required init(rootView: Content) { super.init(rootView: rootView) }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+}
+
 // MARK: - Delegate
 
 @MainActor
@@ -109,9 +130,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.panel = panel
         controller.apply()
 
-        panel.contentView = NSHostingView(
+        panel.contentView = ClickThroughHostingView(
             rootView: RootView(store: store, controller: controller)
         )
+        // Hover highlighting needs these even when the app is not active.
+        panel.acceptsMouseMovedEvents = true
 
         // Restores position and size across launches; only the first run
         // needs placing, and the top-right corner is where a glanceable

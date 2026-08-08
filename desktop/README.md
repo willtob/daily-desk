@@ -102,6 +102,20 @@ just a default:
 defaults write com.willtobin.esp-news-widget placement floating
 ```
 
+### The first-mouse trap
+
+An accessory app at the wallpaper layer is never the active application, so
+*every* click on it is a "first mouse" click — and AppKit's default is to
+swallow that click to activate the app rather than deliver it to the view.
+The panel's content view is a `ClickThroughHostingView` that returns true from
+`acceptsFirstMouse(for:)` for exactly this reason.
+
+The symptom is worth recognising, because it misdirects: dragging the panel
+keeps working while every button and card inside is dead, so it reads as "the
+content froze after I dragged it". Nothing froze — window-background dragging
+is handled by AppKit at the window level and needs no activation, so it was
+the one thing that had ever worked.
+
 ### The isFloatingPanel trap
 
 `NSPanel.isFloatingPanel` is a level setter wearing a Bool's clothing —
