@@ -141,6 +141,21 @@ story without moving the device will not dim it. Thresholds and the timeout are
 constants at the top of `src/imu_wake.cpp`, chosen from measurements on the
 board — see CLAUDE.md.
 
+**Turn the panel over and the UI follows.** The same accelerometer reads which
+way gravity lies along the panel's long edge, and flips the display 180° when
+it has settled the other way up — so the board reads correctly whichever end
+the USB cable comes out of. It takes a deliberate turn, not a nudge: the panel
+must be tilted at least ~15° up from flat before the reading counts at all,
+and held for 700 ms before anything happens. Sitting on its stand it has no
+opinion and holds whatever is on screen.
+
+Only 0°↔180° is wired up, on purpose. Both portrait orientations share a
+logical resolution, so flipping costs nothing beyond the transform already
+running every frame in `example_lvgl_flush_cb`, and no widget is touched.
+**Landscape is not a rotation of this UI, it is a second UI** — every dimension
+in `news_ui.cpp` derives from the compile-time `EXAMPLE_LCD_H_RES`/`V_RES`, and
+at 640×172 an article body is about four lines tall.
+
 The **BOOT** button (GPIO 0) is wired as: *back* when a story is open,
 *manual refresh* on the deck or the list. It is the widget's ↻ button.
 
@@ -219,8 +234,8 @@ src/main.cpp             init order
 ```
 
 `src/lvgl_port.c` has the usual single edit: `news_ui_create()` in place of
-`pomodoro_ui_create()`. Its `lvgl_port_set_rotation()` no longer rebuilds the
-UI — this project is portrait-only and nothing calls it.
+`pomodoro_ui_create()`. Its `lvgl_port_set_rotation()` is now called — by the
+IMU, to flip the panel end over end. It has a `_locked` twin; see below.
 
 ## LVGL notes
 

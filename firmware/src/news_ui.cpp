@@ -109,19 +109,41 @@
 #define BODY_LEADING      6   /* prose wants the opposite */
 #define CARD_BODY_LEADING 2   /* the card excerpt is tighter than the detail */
 
-/* ── Layout ───────────────────────────────────────────────────────── */
+/* ── Layout ─────────────────────────────────────────────────────────
+ *
+ * The panel's dimensions are runtime, not compile-time, because the board can
+ * be turned on its side: portrait is 172x640 and landscape is 640x172, and the
+ * UI is rebuilt against whichever is current. Everything below that depends on
+ * the panel size reads these rather than EXAMPLE_LCD_H_RES/V_RES — those two
+ * are now only the *boot* geometry, and using them anywhere in the layout is
+ * the bug that makes half the UI keep its portrait shape after a rotation. */
+static lv_coord_t ui_w = EXAMPLE_LCD_H_RES;
+static lv_coord_t ui_h = EXAMPLE_LCD_V_RES;
+
 #define PAD          6
-#define HEADER_H     44
-#define NAV_H        48
-#define BODY_W       (EXAMPLE_LCD_H_RES - 2 * PAD)   /* 160 px */
+
+/* Chrome heights and the card, sized per orientation by layout_metrics().
+ * Portrait keeps the values the whole UI was tuned against; landscape cannot,
+ * because the portrait header and nav alone are 92 px of a 172 px panel. */
+static lv_coord_t m_header   = 44;
+static lv_coord_t m_nav      = 48;
+static lv_coord_t m_card_h   = 276;
+static lv_coord_t m_radius   = 14;
+static lv_coord_t m_deck_top = 0;
+
+/* True when the panel is on its side. Read by the builders where landscape
+ * needs a different arrangement rather than just different numbers. */
+static bool m_landscape = false;
+
+#define BODY_W       (ui_w - 2 * PAD)   /* 160 px portrait */
 #define CARD_PAD     10
 #define TEXT_W       (BODY_W - 2 * CARD_PAD)         /* 140 px */
 #define BAR_H        4
 
 /* Corners are generous on purpose — on the widget they are what separates
- * "widget" from "window". Scaled down from the widget's 18 px, which was
- * chosen against a 264 px card and is proportionally huge on a 160 px one. */
-#define CARD_RADIUS  14
+ * "widget" from "window". Portrait's 14 is scaled down from the widget's 18,
+ * which was chosen against a 264 px card and is proportionally huge on a
+ * 160 px one; landscape's card is shorter still, so it drops again. */
 
 /* ── The deck ─────────────────────────────────────────────────────────
  *
@@ -150,14 +172,45 @@
 #define DROP_STEP    16     /* how far each ledge hangs below the one above */
 #define SHRINK_STEP  10     /* and how much narrower it is */
 
-#define CARD_H      276
-#define DECK_AREA_H (EXAMPLE_LCD_V_RES - HEADER_H - 1 - NAV_H)
-/* Cards are children of cont_deck, which is the whole screen, so this is in
- * screen coordinates — the header and its hairline have to be added back in.
- * Leaving them out centres the deck in the panel instead of in the space
+#define DECK_AREA_H (ui_h - m_header - 1 - m_nav)
+
+/* Set every runtime metric from the panel size. Called before anything is
+ * built, and again on every rotation.
+ *
+ * Cards are children of cont_deck, which is the whole screen, so m_deck_top is
+ * in screen coordinates — the header and its hairline have to be added back
+ * in. Leaving them out centres the deck in the panel instead of in the space
  * between the header and the nav bar, which reads as a stack that has slipped
  * upwards and left a hole under it. */
-#define DECK_TOP    (HEADER_H + 1 + (DECK_AREA_H - (CARD_H + PEEK * DROP_STEP)) / 2)
+static void layout_metrics(lv_coord_t w, lv_coord_t h)
+{
+    ui_w = w;
+    ui_h = h;
+    m_landscape = (w > h);
+
+    if (m_landscape) {
+        /* 172 px of height total. The portrait chrome is 92 of that, which
+         * would leave 80 for a 276 px card, so both shrink hard. What buys the
+         * space back is that a 640 px-wide header needs nothing like 44 px to
+         * hold one word and a status, and the nav bar's three controls can sit
+         * on one short row. */
+        m_header = 28;
+        m_nav    = 28;
+        m_card_h = h - m_header - 1 - m_nav - 2 * PAD;   /* 105 */
+        m_radius = 10;
+    } else {
+        m_header = 44;
+        m_nav    = 48;
+        m_card_h = 276;
+        m_radius = 14;
+    }
+
+    /* The peek stack only exists where there is room to hang ledges below the
+     * card. In landscape the card already fills the content band, so the
+     * ledges would be drawn off the bottom of the panel. */
+    lv_coord_t stack = m_landscape ? 0 : PEEK * DROP_STEP;
+    m_deck_top = m_header + 1 + (DECK_AREA_H - (m_card_h + stack)) / 2;
+}
 
 #define FLIP_MS     280
 
@@ -209,6 +262,23 @@ static lv_obj_t *d_topbar;
 static lv_obj_t *btn_back, *lbl_back;
 static lv_obj_t *lbl_d_badge, *lbl_d_score;
 static lv_obj_t *lbl_d_title, *lbl_d_source, *d_rule, *lbl_d_summary;
+
+/* ── Landscape's newspaper columns ────────────────────────────────────
+ *
+ * At 640x172 a single column shows about four lines, which is a scrollbar with
+ * a story attached. The width is the thing landscape actually has, so the body
+ * runs down a narrow column and continues in the next one, and the row of them
+ * scrolls sideways — two visible at a time, which is roughly what portrait
+ * shows in one screen.
+ *
+ * A fixed pool rather than one label per chunk: widgets are built once and
+ * reused for every story, same as the deck's cards. Eight columns is about
+ * 2500 characters, comfortably past NEWS_SUMMARY_LEN; anything longer is
+ * truncated rather than silently losing its tail off the end of the row. */
+#define DET_COLS_MAX  8
+static lv_obj_t *d_col[DET_COLS_MAX];
+static lv_obj_t *d_headcol;
+static char      d_col_buf[DET_COLS_MAX][384];
 static lv_obj_t *btn_listen, *lbl_listen;
 
 /* ── View state ───────────────────────────────────────────────────── */
@@ -442,7 +512,7 @@ static slot_t slot_geom(int slot)
         /* Off to the left and slightly up — the direction the widget's card
          * swings before it drops behind the deck. */
         g.x   = PAD - 74;
-        g.y   = DECK_TOP - 12;
+        g.y   = m_deck_top - 12;
         g.w   = BODY_W;
         g.opa = LV_OPA_TRANSP;
         return g;
@@ -452,7 +522,7 @@ static slot_t slot_geom(int slot)
 
     g.w   = BODY_W - slot * SHRINK_STEP;
     g.x   = PAD + slot * SHRINK_STEP / 2;    /* keeps the stack centred */
-    g.y   = DECK_TOP + slot * DROP_STEP;
+    g.y   = m_deck_top + slot * DROP_STEP;
     switch (slot) {
         case 0:  g.opa = 255; break;
         case 1:  g.opa = 235; break;
@@ -535,7 +605,16 @@ static void deck_settle(void)
     apply_slot(face[face_active], top, top, 0);
     lv_obj_add_flag(face[1 - face_active], LV_OBJ_FLAG_HIDDEN);
 
+    /* The peek stack is depth built out of ledges hanging below the card, and
+     * landscape has no room to hang them — m_deck_top already puts the card
+     * against the nav bar, so every ledge would be drawn off the bottom of the
+     * panel or straight through the chrome. The deck reads as a single card
+     * there, and the counter carries the "1 / 10" that the stack implied. */
     for (int i = 0; i < PEEK; i++) {
+        if (m_landscape) {
+            lv_obj_add_flag(deck_peek[i], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
         slot_t g = slot_geom(i + 1);
         lv_obj_clear_flag(deck_peek[i], LV_OBJ_FLAG_HIDDEN);
         apply_slot(deck_peek[i], g, g, 0);
@@ -792,7 +871,7 @@ static void area_set(lv_area_t *a, lv_coord_t x, lv_coord_t y,
 
 static void detail_full_area(lv_area_t *a)
 {
-    area_set(a, 0, 0, EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES);
+    area_set(a, 0, 0, ui_w, ui_h);
 }
 
 /* The single place cont_detail's geometry changes. cont_detail's parent is the
@@ -811,8 +890,8 @@ static void detail_set_rect(const lv_area_t *a, lv_coord_t radius)
 static bool detail_is_full(void)
 {
     return det_cur.x1 == 0 && det_cur.y1 == 0 &&
-           lv_area_get_width(&det_cur)  == EXAMPLE_LCD_H_RES &&
-           lv_area_get_height(&det_cur) == EXAMPLE_LCD_V_RES;
+           lv_area_get_width(&det_cur)  == ui_w &&
+           lv_area_get_height(&det_cur) == ui_h;
 }
 
 static void rect_cb(void *obj, int32_t t)
@@ -890,7 +969,7 @@ static void detail_move_to(const lv_area_t *to, lv_coord_t radius,
      * EXPAND_MS crawling through it. */
     lv_coord_t span = lv_area_get_height(&det_to) - lv_area_get_height(&det_from);
     if (span < 0) span = -span;
-    uint32_t ms = base_ms * span / (EXAMPLE_LCD_V_RES - CARD_H);
+    uint32_t ms = base_ms * span / (ui_h - m_card_h);
     if (ms < 90)      ms = 90;
     if (ms > base_ms) ms = base_ms;
 
@@ -921,7 +1000,7 @@ static void detail_dismiss(void)
 
     if (!origin_rect(detail_origin, &back)) { detail_park(); return; }
 
-    detail_move_to(&back, CARD_RADIUS, COLLAPSE_MS, collapse_ready_cb);
+    detail_move_to(&back, m_radius, COLLAPSE_MS, collapse_ready_cb);
 }
 
 /* ── Paging inside an open story ──────────────────────────────────────
@@ -967,7 +1046,7 @@ static void show_deck(void)
     if (!lv_obj_has_flag(cont_list, LV_OBJ_FLAG_HIDDEN)) {
         lv_obj_set_x(cont_list, 0);
         slide(cont_list, anim_y_cb, lv_obj_get_y(cont_list),
-              EXAMPLE_LCD_V_RES, true);
+              ui_h, true);
     }
     detail_dismiss();
 }
@@ -992,6 +1071,73 @@ static void show_list(void)
 }
 
 /* origin is the card that was tapped, and NULL when there wasn't one. */
+/* Column geometry, derived rather than stored so it survives a rotation. */
+static lv_coord_t det_col_w(void) { return (ui_w - 2 * PAD - 3 * 8) / 2; }
+static lv_coord_t det_col_h(void) { return ui_h - m_header - m_nav - 2 * PAD; }
+
+/* Fill the column labels with `src`, breaking it where it stops fitting.
+ *
+ * The break has to be *measured*, not estimated: a characters-per-column guess
+ * is wrong as soon as a long word wraps early or a paragraph break eats a line,
+ * and the failure is invisible — the text just quietly loses its last line off
+ * the bottom of a column. lv_txt_get_size() lays the text out with the same
+ * font, width and line spacing the label will use, so it answers the only
+ * question that matters: how tall would this actually be.
+ *
+ * Binary search over the split point, snapped outward to a space. Snapping is
+ * what keeps this UTF-8 safe — a space is always a single ASCII byte and never
+ * appears inside a multi-byte sequence, so a cut there cannot land mid
+ * codepoint and turn an accented Spanish headline into replacement glyphs. */
+static void detail_fill_columns(const char *src)
+{
+    const lv_coord_t w = det_col_w();
+    const lv_coord_t h = det_col_h();
+
+    for (int c = 0; c < DET_COLS_MAX; c++) {
+        if (!src || !*src) {
+            lv_obj_add_flag(d_col[c], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+
+        size_t remain = strlen(src);
+        size_t cap    = sizeof(d_col_buf[c]) - 1;
+        size_t hi     = remain < cap ? remain : cap;
+        size_t lo     = 0, fit = 0;
+
+        while (lo <= hi) {
+            size_t mid = (lo + hi) / 2;
+            if (mid == 0) break;
+
+            /* Snap back to a word boundary so nothing is cut mid-word. */
+            size_t cut = mid;
+            while (cut > 0 && src[cut] != ' ' && src[cut] != '\n') cut--;
+            if (cut == 0) cut = mid;
+
+            memcpy(d_col_buf[c], src, cut);
+            d_col_buf[c][cut] = '\0';
+
+            lv_point_t sz;
+            lv_txt_get_size(&sz, d_col_buf[c], FONT_BODY, 0, BODY_LEADING,
+                            w, LV_TEXT_FLAG_NONE);
+
+            if (sz.y <= h) { fit = cut; lo = mid + 1; }
+            else           { if (mid == 0) break; hi = mid - 1; }
+        }
+
+        /* A single word too tall for the column would loop forever at fit 0;
+         * take the whole remainder and let the label clip it. */
+        if (fit == 0) fit = hi > 0 ? hi : remain;
+
+        memcpy(d_col_buf[c], src, fit);
+        d_col_buf[c][fit] = '\0';
+        lv_label_set_text(d_col[c], d_col_buf[c]);
+        lv_obj_clear_flag(d_col[c], LV_OBJ_FLAG_HIDDEN);
+
+        src += fit;
+        while (*src == ' ' || *src == '\n') src++;   /* don't start on space */
+    }
+}
+
 static void show_detail(int idx, lv_obj_t *origin)
 {
     if (idx < 0 || idx >= news_count) return;
@@ -1021,7 +1167,22 @@ static void show_detail(int idx, lv_obj_t *origin)
 
     /* The empty case is real: a fetch failure leaves the RSS summary, and some
      * feeds ship nothing worth showing. */
-    if (a->summary[0]) {
+    if (m_landscape) {
+        static char clean[NEWS_SUMMARY_LEN + 96];
+        static char body[NEWS_SUMMARY_LEN + 160];
+        if (a->summary[0]) {
+            md_strip(a->summary, clean, sizeof(clean), true);
+            if (!strchr(clean, '\n')) {
+                paragraphize(clean, body, sizeof(body));
+                detail_fill_columns(body);
+            } else {
+                detail_fill_columns(clean);
+            }
+        } else {
+            detail_fill_columns("(no summary in the feed)");
+        }
+        lv_obj_scroll_to_x(detail_body, 0, LV_ANIM_OFF);
+    } else if (a->summary[0]) {
         static char clean[NEWS_SUMMARY_LEN + 96];
         static char body[NEWS_SUMMARY_LEN + 160];
 
@@ -1071,11 +1232,11 @@ static void show_detail(int idx, lv_obj_t *origin)
         /* No card to grow out of. Grow from a card-sized rect in the middle
          * rather than snapping to full screen — this path is rare, but a snap
          * here is the same one-frame flash the whole design avoids. */
-        area_set(&start, PAD, (EXAMPLE_LCD_V_RES - CARD_H) / 2, BODY_W, CARD_H);
+        area_set(&start, PAD, (ui_h - m_card_h) / 2, BODY_W, m_card_h);
         detail_origin = NULL;
     }
 
-    detail_set_rect(&start, CARD_RADIUS);
+    detail_set_rect(&start, m_radius);
     detail_move_to(&full, 0, EXPAND_MS, expand_ready_cb);
 }
 
@@ -1413,7 +1574,7 @@ static lv_obj_t *make_bar(lv_obj_t *parent, lv_coord_t x, lv_coord_t y,
 static lv_obj_t *build_header(lv_obj_t *parent, bool with_status)
 {
     lv_obj_t *hdr = lv_obj_create(parent);
-    lv_obj_set_size(hdr, EXAMPLE_LCD_H_RES, HEADER_H);
+    lv_obj_set_size(hdr, ui_w, m_header);
     lv_obj_set_pos(hdr, 0, 0);
     strip_chrome(hdr);
     lv_obj_clear_flag(hdr, LV_OBJ_FLAG_SCROLLABLE);
@@ -1435,10 +1596,10 @@ static lv_obj_t *build_header(lv_obj_t *parent, bool with_status)
 static void build_card_face(int f)
 {
     face[f] = lv_obj_create(cont_deck);
-    lv_obj_set_size(face[f], BODY_W, CARD_H);
+    lv_obj_set_size(face[f], BODY_W, m_card_h);
     strip_chrome(face[f]);
     lv_obj_set_style_bg_opa(face[f], LV_OPA_COVER, LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(face[f], CARD_RADIUS, LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(face[f], m_radius, LV_STATE_DEFAULT);
     /* Two adjacent cards in neighbouring tints — amber behind amber —
      * otherwise merge into one shape at the ledge where they overlap. A dark
      * hairline is enough to keep them countable without reading as a border. */
@@ -1454,31 +1615,54 @@ static void build_card_face(int f)
      * Positions are absolute rather than flex — the face is a fixed size and
      * every ledge in the stack has to line up with it exactly. */
     f_badge[f] = make_badge(face[f]);
-    lv_obj_set_pos(f_badge[f], CARD_PAD, CARD_PAD);
 
     /* The score is the reason this story is on top of the deck, so it gets the
      * weight of a headline number rather than being tucked away as metadata. */
     f_score[f] = make_label(face[f], FONT_TITLE, CLR_INK, 0);
-    lv_obj_align(f_score[f], LV_ALIGN_TOP_RIGHT, -CARD_PAD, CARD_PAD - 1);
 
-    f_title[f] = make_label(face[f], FONT_TITLE, CLR_INK, TEXT_W);
-    lv_obj_set_pos(f_title[f], CARD_PAD, CARD_PAD + 30);
-    lv_obj_set_height(f_title[f], 105);
+    /* The headline column is narrower in landscape so it clears the open chip
+     * sitting in the bottom-right; in portrait the chip is below the text. */
+    f_title[f] = make_label(face[f], FONT_TITLE, CLR_INK,
+                            m_landscape ? TEXT_W - 34 : TEXT_W);
     lv_label_set_long_mode(f_title[f], LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_line_space(f_title[f], TITLE_LEADING, LV_STATE_DEFAULT);
 
     f_summary[f] = make_label(face[f], FONT_BODY, CLR_INK, TEXT_W);
-    lv_obj_set_pos(f_summary[f], CARD_PAD, CARD_PAD + 141);
-    lv_obj_set_height(f_summary[f], 62);
     lv_label_set_long_mode(f_summary[f], LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_opa(f_summary[f], INK_SOFT, LV_STATE_DEFAULT);
     lv_obj_set_style_text_line_space(f_summary[f], CARD_BODY_LEADING, LV_STATE_DEFAULT);
 
-    f_bar[f] = make_bar(face[f], CARD_PAD, CARD_H - CARD_PAD - 22 - 9 - BAR_H,
-                        TEXT_W);
+    if (m_landscape) {
+        /* ~103 px tall: a badge row, two lines of headline, then the rule and
+         * the provenance. **The excerpt is dropped rather than squeezed** —
+         * 640 px of width already gives the headline about 110 characters over
+         * two lines, which is more of the story than portrait's clipped
+         * headline plus its clipped excerpt showed between them. Keeping a
+         * three-line excerpt here would have cost the second headline line. */
+        lv_obj_set_pos(f_badge[f], CARD_PAD, 6);
+        lv_obj_align(f_score[f], LV_ALIGN_TOP_RIGHT, -CARD_PAD, 4);
+        lv_obj_set_pos(f_title[f], CARD_PAD, 26);
+        lv_obj_set_height(f_title[f], 44);
+        lv_obj_add_flag(f_summary[f], LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_set_pos(f_badge[f], CARD_PAD, CARD_PAD);
+        lv_obj_align(f_score[f], LV_ALIGN_TOP_RIGHT, -CARD_PAD, CARD_PAD - 1);
+        lv_obj_set_pos(f_title[f], CARD_PAD, CARD_PAD + 30);
+        lv_obj_set_height(f_title[f], 105);
+        lv_obj_set_pos(f_summary[f], CARD_PAD, CARD_PAD + 141);
+        lv_obj_set_height(f_summary[f], 62);
+    }
+
+    /* The rule and the source hang off the bottom of the card in both
+     * orientations; only the gap above them differs. */
+    lv_coord_t bar_y = m_landscape ? m_card_h - 29
+                                   : m_card_h - CARD_PAD - 22 - 9 - BAR_H;
+    f_bar[f] = make_bar(face[f], CARD_PAD, bar_y,
+                        m_landscape ? TEXT_W - 34 : TEXT_W);
 
     f_source[f] = make_label(face[f], FONT_META, CLR_INK, TEXT_W - 28);
-    lv_obj_set_pos(f_source[f], CARD_PAD, CARD_H - CARD_PAD - 18);
+    lv_obj_set_pos(f_source[f], CARD_PAD,
+                   m_landscape ? m_card_h - 23 : m_card_h - CARD_PAD - 18);
     lv_label_set_long_mode(f_source[f], LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_opa(f_source[f], INK_SOURCE, LV_STATE_DEFAULT);
     lv_obj_set_style_text_letter_space(f_source[f], META_TRACKING, LV_STATE_DEFAULT);
@@ -1492,7 +1676,7 @@ static void build_card_face(int f)
 static void build_deck_view(lv_obj_t *scr)
 {
     cont_deck = lv_obj_create(scr);
-    lv_obj_set_size(cont_deck, EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES);
+    lv_obj_set_size(cont_deck, ui_w, ui_h);
     lv_obj_set_pos(cont_deck, 0, 0);
     strip_chrome(cont_deck);
     lv_obj_set_style_bg_opa(cont_deck, LV_OPA_COVER, LV_STATE_DEFAULT);
@@ -1504,8 +1688,8 @@ static void build_deck_view(lv_obj_t *scr)
     /* The deck body starts below the header. Cards are positioned in screen
      * coordinates inside cont_deck, so slot_geom() can stay arithmetic. */
     lv_obj_t *rule = lv_obj_create(cont_deck);
-    lv_obj_set_size(rule, EXAMPLE_LCD_H_RES, 1);
-    lv_obj_set_pos(rule, 0, HEADER_H);
+    lv_obj_set_size(rule, ui_w, 1);
+    lv_obj_set_pos(rule, 0, m_header);
     strip_chrome(rule);
     lv_obj_set_style_bg_opa(rule, LV_OPA_COVER, LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(rule, CLR_RULE, LV_STATE_DEFAULT);
@@ -1514,10 +1698,10 @@ static void build_deck_view(lv_obj_t *scr)
      * created after this draws on top of it. Deepest ledge first. */
     for (int i = PEEK - 1; i >= 0; i--) {
         deck_peek[i] = lv_obj_create(cont_deck);
-        lv_obj_set_size(deck_peek[i], BODY_W - (i + 1) * SHRINK_STEP, CARD_H);
+        lv_obj_set_size(deck_peek[i], BODY_W - (i + 1) * SHRINK_STEP, m_card_h);
         strip_chrome(deck_peek[i]);
         lv_obj_set_style_bg_opa(deck_peek[i], LV_OPA_COVER, LV_STATE_DEFAULT);
-        lv_obj_set_style_radius(deck_peek[i], CARD_RADIUS, LV_STATE_DEFAULT);
+        lv_obj_set_style_radius(deck_peek[i], m_radius, LV_STATE_DEFAULT);
         lv_obj_set_style_border_width(deck_peek[i], 1, LV_STATE_DEFAULT);
         lv_obj_set_style_border_color(deck_peek[i], CLR_BG, LV_STATE_DEFAULT);
         lv_obj_set_style_border_opa(deck_peek[i], 140, LV_STATE_DEFAULT);
@@ -1535,14 +1719,14 @@ static void build_deck_view(lv_obj_t *scr)
     lv_label_set_long_mode(lbl_deck_empty, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(lbl_deck_empty, LV_TEXT_ALIGN_CENTER, LV_STATE_DEFAULT);
     lv_label_set_text(lbl_deck_empty, "No stories yet.\n\nStart the backend with\nesp-serve --port 8010");
-    lv_obj_set_pos(lbl_deck_empty, PAD, DECK_TOP + 60);
+    lv_obj_set_pos(lbl_deck_empty, PAD, m_deck_top + 60);
 
     /* Nav bar — fixed, so the controls never move. An earlier sketch on the
      * widget put next on the card itself, which meant the button flew away and
      * came back every time you pressed it. */
     lv_obj_t *nav = lv_obj_create(cont_deck);
-    lv_obj_set_size(nav, EXAMPLE_LCD_H_RES, NAV_H);
-    lv_obj_set_pos(nav, 0, EXAMPLE_LCD_V_RES - NAV_H);
+    lv_obj_set_size(nav, ui_w, m_nav);
+    lv_obj_set_pos(nav, 0, ui_h - m_nav);
     strip_chrome(nav);
     lv_obj_clear_flag(nav, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -1570,8 +1754,8 @@ static void build_deck_view(lv_obj_t *scr)
 static void build_list_view(lv_obj_t *scr)
 {
     cont_list = lv_obj_create(scr);
-    lv_obj_set_size(cont_list, EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES);
-    lv_obj_set_pos(cont_list, 0, EXAMPLE_LCD_V_RES);   /* parked below */
+    lv_obj_set_size(cont_list, ui_w, ui_h);
+    lv_obj_set_pos(cont_list, 0, ui_h);   /* parked below */
     strip_chrome(cont_list);
     lv_obj_set_style_bg_opa(cont_list, LV_OPA_COVER, LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(cont_list, CLR_BG, LV_STATE_DEFAULT);
@@ -1581,8 +1765,8 @@ static void build_list_view(lv_obj_t *scr)
     build_header(cont_list, false);
 
     lv_obj_t *rule = lv_obj_create(cont_list);
-    lv_obj_set_size(rule, EXAMPLE_LCD_H_RES, 1);
-    lv_obj_set_pos(rule, 0, HEADER_H);
+    lv_obj_set_size(rule, ui_w, 1);
+    lv_obj_set_pos(rule, 0, m_header);
     strip_chrome(rule);
     lv_obj_set_style_bg_opa(rule, LV_OPA_COVER, LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(rule, CLR_RULE, LV_STATE_DEFAULT);
@@ -1590,8 +1774,8 @@ static void build_list_view(lv_obj_t *scr)
     /* Scrollable card column. sim_main.c reaches this as child 2 of child 1 of
      * the screen — keep cont_list second on the screen and this third here. */
     list_body = lv_obj_create(cont_list);
-    lv_obj_set_size(list_body, EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES - HEADER_H - 1);
-    lv_obj_set_pos(list_body, 0, HEADER_H + 1);
+    lv_obj_set_size(list_body, ui_w, ui_h - m_header - 1);
+    lv_obj_set_pos(list_body, 0, m_header + 1);
     strip_chrome(list_body);
     lv_obj_set_style_pad_all(list_body, PAD, LV_STATE_DEFAULT);
     lv_obj_set_style_pad_row(list_body, PAD, LV_STATE_DEFAULT);
@@ -1607,7 +1791,7 @@ static void build_list_view(lv_obj_t *scr)
         lv_obj_set_style_bg_opa(card[i], LV_OPA_COVER, LV_STATE_DEFAULT);
         lv_obj_set_style_border_width(card[i], 0, LV_STATE_DEFAULT);
         lv_obj_set_style_shadow_width(card[i], 0, LV_STATE_DEFAULT);
-        lv_obj_set_style_radius(card[i], CARD_RADIUS, LV_STATE_DEFAULT);
+        lv_obj_set_style_radius(card[i], m_radius, LV_STATE_DEFAULT);
         lv_obj_set_style_pad_all(card[i], CARD_PAD, LV_STATE_DEFAULT);
         lv_obj_set_style_pad_row(card[i], 6, LV_STATE_DEFAULT);
         lv_obj_set_flex_flow(card[i], LV_FLEX_FLOW_COLUMN);
@@ -1653,8 +1837,8 @@ static void build_list_view(lv_obj_t *scr)
 static void build_detail_view(lv_obj_t *scr)
 {
     cont_detail = lv_obj_create(scr);
-    lv_obj_set_size(cont_detail, EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES);
-    lv_obj_set_pos(cont_detail, EXAMPLE_LCD_H_RES, 0);
+    lv_obj_set_size(cont_detail, ui_w, ui_h);
+    lv_obj_set_pos(cont_detail, ui_w, 0);
     strip_chrome(cont_detail);
     lv_obj_set_style_bg_opa(cont_detail, LV_OPA_COVER, LV_STATE_DEFAULT);
     lv_obj_clear_flag(cont_detail, LV_OBJ_FLAG_SCROLLABLE);
@@ -1663,7 +1847,7 @@ static void build_detail_view(lv_obj_t *scr)
     /* Back and badge share the top row, which keeps the story's own headline
      * as the first thing you read. */
     d_topbar = lv_obj_create(cont_detail);
-    lv_obj_set_size(d_topbar, EXAMPLE_LCD_H_RES, HEADER_H);
+    lv_obj_set_size(d_topbar, ui_w, m_header);
     lv_obj_set_pos(d_topbar, 0, 0);
     strip_chrome(d_topbar);
     lv_obj_clear_flag(d_topbar, LV_OBJ_FLAG_SCROLLABLE);
@@ -1702,29 +1886,50 @@ static void build_detail_view(lv_obj_t *scr)
 
     /* Scrollable story body, between the top bar and the pinned LISTEN. */
     detail_body = lv_obj_create(cont_detail);
-    lv_obj_set_size(detail_body, EXAMPLE_LCD_H_RES,
-                    EXAMPLE_LCD_V_RES - HEADER_H - NAV_H);
-    lv_obj_set_pos(detail_body, 0, HEADER_H);
+    lv_obj_set_size(detail_body, ui_w,
+                    ui_h - m_header - m_nav);
+    lv_obj_set_pos(detail_body, 0, m_header);
     strip_chrome(detail_body);
     lv_obj_set_style_pad_hor(detail_body, CARD_PAD, LV_STATE_DEFAULT);
     lv_obj_set_style_pad_bottom(detail_body, PAD, LV_STATE_DEFAULT);
     lv_obj_set_style_pad_row(detail_body, 8, LV_STATE_DEFAULT);
-    lv_obj_set_flex_flow(detail_body, LV_FLEX_FLOW_COLUMN);
+    /* Portrait scrolls one column downwards; landscape lays the story out as a
+     * row of columns and scrolls sideways. Same widgets either way — only the
+     * flow, the scroll axis and the parent of the headline block change. */
+    lv_obj_set_flex_flow(detail_body,
+                         m_landscape ? LV_FLEX_FLOW_ROW : LV_FLEX_FLOW_COLUMN);
     lv_obj_add_flag(detail_body, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_scroll_dir(detail_body, LV_DIR_VER);
+    lv_obj_set_scroll_dir(detail_body, m_landscape ? LV_DIR_HOR : LV_DIR_VER);
     lv_obj_set_scrollbar_mode(detail_body, LV_SCROLLBAR_MODE_AUTO);
 
-    lbl_d_title = make_label(detail_body, FONT_DISPLAY, CLR_INK, TEXT_W);
+    /* In landscape the headline, source and rule stack in their own column at
+     * the head of the row, so the story reads left to right from its title
+     * exactly as a newspaper does. In portrait they are simply the first three
+     * things in the vertical flow, which is what d_headcol collapses to. */
+    lv_obj_t *head_parent = detail_body;
+    if (m_landscape) {
+        d_headcol = lv_obj_create(detail_body);
+        lv_obj_set_size(d_headcol, det_col_w(), det_col_h());
+        strip_chrome(d_headcol);
+        lv_obj_clear_flag(d_headcol, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_flex_flow(d_headcol, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_style_pad_row(d_headcol, 6, LV_STATE_DEFAULT);
+        head_parent = d_headcol;
+    }
+
+    lbl_d_title = make_label(head_parent, FONT_DISPLAY, CLR_INK,
+                             m_landscape ? det_col_w() : TEXT_W);
     lv_label_set_long_mode(lbl_d_title, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_line_space(lbl_d_title, TITLE_LEADING, LV_STATE_DEFAULT);
 
-    lbl_d_source = make_label(detail_body, FONT_META, CLR_INK, TEXT_W);
+    lbl_d_source = make_label(head_parent, FONT_META, CLR_INK,
+                              m_landscape ? det_col_w() : TEXT_W);
     lv_label_set_long_mode(lbl_d_source, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_opa(lbl_d_source, INK_SOURCE, LV_STATE_DEFAULT);
     lv_obj_set_style_text_letter_space(lbl_d_source, META_TRACKING, LV_STATE_DEFAULT);
 
-    d_rule = lv_obj_create(detail_body);
-    lv_obj_set_size(d_rule, TEXT_W, 1);
+    d_rule = lv_obj_create(head_parent);
+    lv_obj_set_size(d_rule, m_landscape ? det_col_w() : TEXT_W, 1);
     strip_chrome(d_rule);
     lv_obj_set_style_bg_opa(d_rule, INK_HAIRLINE, LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(d_rule, CLR_INK, LV_STATE_DEFAULT);
@@ -1735,11 +1940,26 @@ static void build_detail_view(lv_obj_t *scr)
     lv_obj_set_style_text_opa(lbl_d_summary, INK_BODY, LV_STATE_DEFAULT);
     lv_obj_set_style_text_line_space(lbl_d_summary, BODY_LEADING, LV_STATE_DEFAULT);
 
+    if (m_landscape) {
+        /* The single-column label is built but never shown in landscape, so
+         * every existing caller that writes to it stays valid. */
+        lv_obj_add_flag(lbl_d_summary, LV_OBJ_FLAG_HIDDEN);
+
+        for (int c = 0; c < DET_COLS_MAX; c++) {
+            d_col[c] = make_label(detail_body, FONT_BODY, CLR_INK, det_col_w());
+            lv_obj_set_height(d_col[c], det_col_h());
+            lv_label_set_long_mode(d_col[c], LV_LABEL_LONG_WRAP);
+            lv_obj_set_style_text_opa(d_col[c], INK_BODY, LV_STATE_DEFAULT);
+            lv_obj_set_style_text_line_space(d_col[c], BODY_LEADING, LV_STATE_DEFAULT);
+            lv_obj_add_flag(d_col[c], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
     /* LISTEN / STOP — pinned to the bottom rather than sitting in the scroll,
      * so it is reachable without paging to the end of an 800-word summary. */
-    btn_listen = make_button(cont_detail, EXAMPLE_LCD_H_RES, NAV_H,
+    btn_listen = make_button(cont_detail, ui_w, m_nav,
                              CLR_INK, CLR_RULE, cb_listen);
-    lv_obj_set_pos(btn_listen, 0, EXAMPLE_LCD_V_RES - NAV_H);
+    lv_obj_set_pos(btn_listen, 0, ui_h - m_nav);
 
     lbl_listen = make_label(btn_listen, FONT_TITLE, CLR_ACCENT, 0);
     lv_obj_set_style_text_letter_space(lbl_listen, META_TRACKING, LV_STATE_DEFAULT);
@@ -1748,9 +1968,18 @@ static void build_detail_view(lv_obj_t *scr)
 }
 
 /* ── Entry point — called from lvgl_port_init() under the LVGL lock ── */
+/* Builds every view onto the screen. Split out from news_ui_create() so a
+ * rotation can run it a second time; it deliberately creates no timers, which
+ * are per-boot rather than per-layout. */
+static void build_all(lv_obj_t *scr);
+
 void news_ui_create(void)
 {
     pinMode(BOOT_BUTTON_GPIO, INPUT_PULLUP);
+
+    /* Ask the display for its size rather than assuming the boot geometry —
+     * this is what makes the same builders serve both orientations. */
+    layout_metrics(lv_disp_get_hor_res(NULL), lv_disp_get_ver_res(NULL));
 
     lv_obj_t *scr = lv_scr_act();
     lv_obj_set_style_bg_color(scr, CLR_BG, LV_STATE_DEFAULT);
@@ -1758,6 +1987,80 @@ void news_ui_create(void)
     lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_pad_all(scr, 0, LV_STATE_DEFAULT);
 
+    build_all(scr);
+
+    lv_timer_create(ui_timer_cb, 250, NULL);
+
+#ifdef ESP_PLATFORM
+    /* Its own timer at 100 ms rather than folded into the 250 ms one: picking
+     * the panel up should light it before you have finished lifting it, and a
+     * quarter-second lag between the movement and the response reads as the
+     * board being slow rather than as a considered fade. Still on the LVGL
+     * task, so it is serialised with everything else. */
+    imu_wake_init();
+    lv_timer_create([](lv_timer_t *t) { (void)t; imu_wake_poll(); }, 100, NULL);
+#endif
+}
+
+/* Rebuild the whole widget tree at the current display size.
+ *
+ * Called when the board is turned onto its side, where the layout genuinely
+ * differs rather than merely moving — so this tears down and rebuilds instead
+ * of repositioning. Everything the UI knows lives in news_client, not in the
+ * widgets, which is what makes that affordable.
+ *
+ * Three things have to happen in this order, and the first is the one that
+ * bites: **kill the animations before deleting anything.** A running lv_anim
+ * holds a raw lv_obj_t* and will keep writing to it on the next tick; freeing
+ * the object underneath it is a use-after-free that presents as a display
+ * freeze several seconds later, nowhere near the rotation that caused it. */
+void news_ui_relayout(void)
+{
+    lv_anim_del_all();
+
+    /* Remember where the reader was. Rotating is not a way of asking to be put
+     * back at the top of the deck, and losing the story you were reading
+     * because you tilted the panel would read as a crash. */
+    view_t   prev_view = view;
+    view_t   prev_from = detail_from;
+    int      prev_sel  = selected;
+    int      prev_pos  = deck_pos;
+
+    lv_obj_t *scr = lv_scr_act();
+    lv_obj_clean(scr);              /* deletes every child and its event cbs */
+
+    layout_metrics(lv_disp_get_hor_res(NULL), lv_disp_get_ver_res(NULL));
+    build_all(scr);
+
+    deck_pos    = prev_pos;
+    detail_from = prev_from;
+
+    /* Freshly built widgets are empty. Their text and tint are written by the
+     * refresh path, which only runs when the digest version changes — so a
+     * rebuilt tree stays blank until the next poll, which is up to 15 minutes.
+     * It does not look blank, either: an unfilled card face keeps the base
+     * theme's white background, so the symptom is a white rectangle where the
+     * story should be, not an obviously missing one. Repopulate exactly what
+     * ui_timer_cb's refresh branch does. */
+    render_list();
+    if (news_count > 0) face_fill(face_active, deck_index(deck_pos));
+    deck_settle();
+    render_status();
+
+    /* Restored without animation: the transition belongs to the tap that
+     * opened the story, and replaying it after a rotation would look like the
+     * panel had re-opened the article by itself. show_detail() with a NULL
+     * origin is the no-origin path the nav buttons already use. */
+    if (prev_view == VIEW_DETAIL && prev_sel >= 0 && prev_sel < news_count)
+        show_detail(prev_sel, NULL);
+    else if (prev_view == VIEW_LIST)
+        show_list();
+    else
+        show_deck();
+}
+
+static void build_all(lv_obj_t *scr)
+{
     /* Build order is z-order, and it is load-bearing. The list rides up over
      * the deck and the detail slides in over both, so they have to be created
      * in that order — building the list first put it *underneath* an opaque
@@ -1792,16 +2095,4 @@ void news_ui_create(void)
     lv_obj_add_flag(cont_detail, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_add_flag(detail_body, LV_OBJ_FLAG_GESTURE_BUBBLE);
     for (int f = 0; f < 2; f++) lv_obj_add_flag(face[f], LV_OBJ_FLAG_GESTURE_BUBBLE);
-
-    lv_timer_create(ui_timer_cb, 250, NULL);
-
-#ifdef ESP_PLATFORM
-    /* Its own timer at 100 ms rather than folded into the 250 ms one: picking
-     * the panel up should light it before you have finished lifting it, and a
-     * quarter-second lag between the movement and the response reads as the
-     * board being slow rather than as a considered fade. Still on the LVGL
-     * task, so it is serialised with everything else. */
-    imu_wake_init();
-    lv_timer_create([](lv_timer_t *t) { (void)t; imu_wake_poll(); }, 100, NULL);
-#endif
 }
