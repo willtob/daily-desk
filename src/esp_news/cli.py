@@ -352,6 +352,12 @@ def digest_main() -> None:
         help="Skip the Phase 9 summarize step and use the raw RSS blurbs.",
     )
     parser.add_argument(
+        "--cached-feeds",
+        action="store_true",
+        help="Reuse the stored copy of each feed instead of fetching (no "
+        "network). For tuning interests.yaml; warns if the copies are stale.",
+    )
+    parser.add_argument(
         "--out", default=None, help="Directory for the digest (default: digests/)."
     )
     parser.add_argument(
@@ -380,6 +386,7 @@ def digest_main() -> None:
                 model=args.summary_model, target_chars=args.target_chars
             ),
             use_llm_summary=not args.no_llm,
+            use_cached_feeds=args.cached_feeds,
             similarity_threshold=args.threshold,
             top_n=args.top,
             per_area_cap=args.per_area_cap,

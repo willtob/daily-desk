@@ -40,6 +40,7 @@ def build_digest_graph(
     seen: SeenStore | None = None,
     summarizer: Summarizer | None = None,
     use_llm_summary: bool = True,
+    use_cached_feeds: bool = False,
     similarity_threshold: float = 0.6,
     top_n: int = 10,
     per_area_cap: int | None = 3,
@@ -52,10 +53,14 @@ def build_digest_graph(
     ``use_llm_summary=False`` skips the Phase 9 fetch-and-summarize step and
     renders the RSS blurbs, which is what ``esp-digest --no-llm`` wants when
     the network is flaky or the run just needs to be free.
+
+    ``use_cached_feeds=True`` serves ingest from the stored feed copies instead
+    of the network — for tuning the interest profile, which changes only what
+    happens downstream of ingest.
     """
 
     def ingest_node(state: DigestState) -> dict:
-        return {"raw_articles": ingest_articles(config)}
+        return {"raw_articles": ingest_articles(config, use_cached=use_cached_feeds)}
 
     def dedup_node(state: DigestState) -> dict:
         return {
