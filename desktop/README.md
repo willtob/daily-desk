@@ -73,7 +73,8 @@ defaults write com.willtobin.esp-news-widget baseURL http://127.0.0.1:8010
 | LISTEN | streams `/audio/{i}.pcm` and plays it |
 | ↻, or `⌘R` | `POST /refresh` — re-runs the whole pipeline, ~30 s |
 | `⌘L` | re-read the digest without re-running anything |
-| Right-click header | refresh, reload, placement, quit |
+| Menu bar 📰 | show/hide, refresh, placement, open at login, quit |
+| Right-click header | refresh, reload, placement, open at login, quit |
 | `⌘D` | desktop ⇄ floating |
 | `⌘Q` | quit |
 | Drag anywhere | move the widget |
@@ -86,6 +87,60 @@ The ↻ button is the BOOT button. It matters that it re-runs the pipeline
 rather than re-fetching `digest.json`: fetching RSS only happens when the
 pipeline runs, so a plain re-fetch would redraw the same stories and look like
 the button did nothing.
+
+### Opening a story
+
+The card does not slide aside and the story does not arrive from an edge: the
+story *is* the card, opened out. It starts at the tapped card's exact rect, in
+its tint and at its corner radius, and grows to fill the panel; closing shrinks
+it back into the card it came from. The same transition as the ESP32 panel,
+which is where it was worked out — see `firmware/WORKING-NOTES.md`.
+
+Two nested frames do it, and the order is load-bearing. The inner one lays the
+story out at the **panel's** size, so the text is wrapped for where it is
+going; the outer one is the window that grows, anchored top-left, with the rest
+clipped away. Laying the story out at each intermediate size instead would
+re-wrap every line on every frame and the headline would visibly reflow the
+whole way open. On the firmware this falls out of LVGL clipping children to
+their parent's rectangle; in SwiftUI it has to be asked for.
+
+### Being a widget rather than an app
+
+| Behaviour | Notes |
+|---|---|
+| Sits at the desktop layer | behind every window, pinned across Spaces, no shadow |
+| Fades when unused | drops to 55% when the pointer is elsewhere, full on hover. Desktop placement only — floating is an explicit "show me this now" |
+| Snaps to screen edges | within 18 pt of an edge it takes a 20 pt margin, so it lines up with the stock widgets. Snaps to `visibleFrame`, so "top" is below the menu bar and "bottom" is above the Dock |
+| Opens at login | `SMAppService`, toggled from either menu |
+| No Dock icon | `.accessory` policy, so the menu bar item is the only chrome |
+
+**Open at login only works from a bundle.** `make dev` runs a bare executable
+with no `Info.plist`, `SMAppService` has nothing to register, and the menu item
+is correctly greyed out. Use `make run` or `make install`. The menu reads the
+state back from the system every time it opens rather than caching it, because
+it can be changed behind the app's back in System Settings → General → Login
+Items, and a checkmark that disagrees with reality is worse than none.
+
+## Markdown in summaries
+
+Since Phase 9c the summarizer may emit a two-item subset — `**bold**` for the
+few figures worth spotting, and `- ` bullets when the piece really is a list —
+with blank-line paragraphs. This panel renders all of it; see
+`src/esp_news/markdown.py` for why the subset is that narrow, and note that the
+ESP32 cannot render any of it (an LVGL label draws in exactly one font) so it
+strips instead.
+
+Parsing is deliberately `.inlineOnlyPreservingWhitespace`. Full Markdown would
+read `C#` at the start of a line as a heading and `1.` as an ordered list, and
+this is a news digest where both occur in real prose — as do the summaries
+already cached under the older prompt, written with no thought for Markdown at
+all. Inline-only interprets `**bold**` and leaves every block-level character
+alone; bullets are found by a narrower rule in `Paragraphs.swift`. CommonMark
+already declines to emphasise intra-word underscores, so `snake_case_names`
+survives without special handling.
+
+Card excerpts are flattened back to plain prose: two clipped lines have no room
+to be anything else, and a list rendered into them reads as a broken sentence.
 
 ## The deck
 

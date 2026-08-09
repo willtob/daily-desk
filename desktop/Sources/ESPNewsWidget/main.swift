@@ -89,9 +89,10 @@ final class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
 // MARK: - Delegate
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var panel: NewsPanel!
+    private var statusItem: NSStatusItem?
     private let store = DigestStore(baseURL: resolveBaseURL())
     private let controller = PanelController()
 
@@ -107,6 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         buildMenu()
+        buildStatusItem()
         buildPanel()
     }
 
@@ -231,6 +233,92 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The items target this delegate rather than the responder chain, so
         // they work whether or not the panel is key.
         appMenu.items.forEach { $0.target = ($0.action == #selector(NSApplication.terminate(_:))) ? nil : self }
+    }
+
+    // MARK: Status item
+    //
+    // The only chrome this app has. Everything else lives either in a main
+    // menu no one can see — an .accessory app has no menu bar entry — or in a
+    // right-click on the widget's own header, which you have to know about.
+    // With the panel at the desktop layer and hidden behind windows most of
+    // the time, "how do I get at it" otherwise has no answer.
+
+    private func buildStatusItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.button?.image = NSImage(
+            systemSymbolName: "newspaper",
+            accessibilityDescription: "ESP News"
+        )
+        // Template mode is what makes it follow the menu bar's own light and
+        // dark appearance instead of staying one colour and vanishing in one
+        // of them.
+        item.button?.image?.isTemplate = true
+
+        let menu = NSMenu()
+        menu.delegate = self          // states are refreshed in menuNeedsUpdate
+        item.menu = menu
+        statusItem = item
+    }
+
+    /// Rebuilt on every open rather than kept in sync.
+    ///
+    /// Login-item state can be changed behind the app's back in System
+    /// Settings, and placement can be changed from the header's context menu,
+    /// so anything cached here drifts. Rebuilding a six-item menu costs
+    /// nothing and cannot be wrong.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+
+        let visible = panel?.isVisible ?? false
+        add(menu, visible ? "Hide Panel" : "Show Panel", #selector(togglePanel))
+
+        menu.addItem(.separator())
+        add(menu, "Refresh Digest", #selector(refresh), key: "r")
+        add(menu, "Reload From Backend", #selector(reload))
+
+        menu.addItem(.separator())
+        for placement in PanelController.Placement.allCases {
+            let entry = add(menu, placement.title, #selector(choosePlacement(_:)))
+            entry.representedObject = placement.rawValue
+            entry.state = (controller.placement == placement) ? .on : .off
+        }
+
+        menu.addItem(.separator())
+        let login = add(menu, "Open at Login", #selector(toggleLoginItem))
+        login.state = LoginItem.isEnabled ? .on : .off
+        // Unbundled builds cannot register — see LoginItem. Showing the item
+        // greyed rather than hiding it is the honest thing: it says the
+        // feature exists and this build cannot do it.
+        login.isEnabled = LoginItem.available
+
+        menu.addItem(.separator())
+        add(menu, "Quit ESP News", #selector(NSApplication.terminate(_:)), key: "q")
+    }
+
+    @discardableResult
+    private func add(_ menu: NSMenu, _ title: String,
+                     _ action: Selector, key: String = "") -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        // nil target for terminate so it walks the responder chain to NSApp;
+        // everything else is handled here whether or not the panel is key.
+        item.target = (action == #selector(NSApplication.terminate(_:))) ? nil : self
+        menu.addItem(item)
+        return item
+    }
+
+    @objc private func togglePanel() {
+        guard let panel else { return }
+        if panel.isVisible { panel.orderOut(nil) } else { panel.orderFront(nil) }
+    }
+
+    @objc private func choosePlacement(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let placement = PanelController.Placement(rawValue: raw) else { return }
+        controller.placement = placement
+    }
+
+    @objc private func toggleLoginItem() {
+        LoginItem.set(!LoginItem.isEnabled)
     }
 
     @objc private func refresh() { Task { await store.rebuild() } }

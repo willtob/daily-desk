@@ -47,6 +47,12 @@ struct DeckView: View {
     /// makes it feel like a physical card landing rather than a fade.
     static let step: Animation = .spring(response: 0.44, dampingFraction: 0.74)
 
+    /// The coordinate space the top card's frame is reported in, so a story
+    /// can be grown out of exactly where its card was. Named rather than
+    /// `.local`, because the measurement is taken in the deck and read in
+    /// RootView, two layers up.
+    static let space = "widget"
+
     var body: some View {
         GeometryReader { geo in
             ZStack {
@@ -59,6 +65,18 @@ struct DeckView: View {
                         .frame(width: geo.size.width, height: cardHeight(in: geo.size))
                         .modifier(Slot(slot: slot,
                                        tint: AreaStyle.forArea(article.matchedArea).tint))
+                        // Only the top card reports a frame, and only when it
+                        // is settled in slot 0 — see CardFrameKey.
+                        .background(
+                            GeometryReader { card in
+                                Color.clear.preference(
+                                    key: CardFrameKey.self,
+                                    value: slot == 0
+                                        ? card.frame(in: .named(DeckView.space))
+                                        : .zero
+                                )
+                            }
+                        )
                         .zIndex(Slot.z(slot))
                         // Only the top card is live. Without this the peek
                         // cards keep their hit areas and a click near the
@@ -82,6 +100,27 @@ struct DeckView: View {
     private func wrap(_ p: Int) -> Int {
         let n = articles.count
         return ((p % n) + n) % n
+    }
+}
+
+/// Where the top card is, in the widget's coordinate space.
+///
+/// This is what lets a story grow out of the card that was tapped rather than
+/// arriving from an edge. Every card in the deck writes to the key and all but
+/// the top one write `.zero`, so `reduce` keeps the first non-zero value and
+/// the winner is whichever card is actually in slot 0.
+///
+/// Preferring non-zero rather than simply taking the last also covers the
+/// moment the deck is empty or rebuilding, when nothing reports a real frame:
+/// the value stays `.zero`, and RootView treats that as "no card to grow from"
+/// and opens without the expansion instead of animating out of the top-left
+/// corner.
+struct CardFrameKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next != .zero { value = next }
     }
 }
 
@@ -219,7 +258,11 @@ struct CardFace: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if !article.summary.isEmpty {
-                Text(article.summary)
+                // Flattened to plain text on purpose. This is two clipped
+                // lines of a much longer summary; a bullet marker or a bolded
+                // fragment landing here is noise rather than emphasis, and a
+                // list rendered into two lines reads as a broken sentence.
+                Text(Paragraphs.plain(article.summary))
                     .font(.system(size: Theme.bodySize))
                     .foregroundStyle(Theme.inkSoft())
                     .lineSpacing(1)
@@ -237,7 +280,7 @@ struct CardFace: View {
                 Text(article.source)
                     .font(.system(size: Theme.metaSize))
                     .tracking(Theme.metaTracking)
-                    .foregroundStyle(Theme.inkSoft(0.62))
+                    .foregroundStyle(Theme.inkSoft(Theme.source))
                     .lineLimit(1)
 
                 Spacer(minLength: 4)

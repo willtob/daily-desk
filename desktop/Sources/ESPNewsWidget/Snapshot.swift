@@ -56,11 +56,19 @@ enum Snapshot {
         // Natural height, unlike the deck: a story is taller than the panel
         // and scrolls in the app, so pinning it to 300 px would render a
         // headline with its top row cropped off rather than a story.
-        let detail = shellRaw(fixedHeight: false) {
-            DetailView(article: first, index: 0, client: client,
-                       onBack: {}, audio: AudioPlayer(), scrollable: false)
+        //
+        // Two stories, not one. The first exercises bold and paragraphs; the
+        // second exercises bullets, which are laid out as rows rather than as
+        // text and are the part most likely to break silently.
+        for (n, article) in articles.prefix(2).enumerated() {
+            let detail = shellRaw(fixedHeight: false) {
+                DetailView(article: article, index: n, client: client,
+                           onBack: {}, audio: AudioPlayer(), scrollable: false)
+            }
+            let name = n == 0 ? "detail.png" : "detail-\(n).png"
+            ok = write(detail, to: dir.appendingPathComponent(name)) && ok
         }
-        ok = write(detail, to: dir.appendingPathComponent("detail.png")) && ok
+        _ = first
 
         return ok
     }
@@ -175,16 +183,27 @@ enum Snapshot {
     /// hit the three-line clamp, one short enough to leave the card airy, an
     /// area at the badge width limit, and a low score so the bar has to read
     /// as low rather than as missing.
+    ///
+    /// The first two also carry the Markdown subset the summarizer is allowed
+    /// to emit — bold, bullets and blank-line paragraphs — because the live
+    /// backend serves whatever is in its cache, and a summary written under an
+    /// older prompt has none of it. Without a fixture that does, the renderer
+    /// looks correct right up until the first digest that uses it. The third
+    /// is deliberately left as one unbroken block, which is what everything
+    /// cached under PROMPT_VERSION 1 looks like, so the fallback pacing is
+    /// exercised too.
     private static let fixture: [Article] = [
         Article(
             title: "Open-Weights Mythos Capabilities Are Coming. We're Not Ready.",
             summary: """
-                The post argues there is an 85% chance that within 24 months an \
+                The post argues there is an **85% chance** that within **24 months** an \
                 open-weights model or system will reach “Mythos”-level cybersecurity \
-                capability, and that society is not ready for the consequences. It says \
-                banning open-weights releases worldwide is unlikely, and that closed-weights \
-                labs would still need unusually strong cybersecurity to avoid weight \
-                exfiltration.
+                capability, and that society is not ready for the consequences.
+
+                It says banning open-weights releases worldwide is unlikely, and that \
+                closed-weights labs would still need unusually strong cybersecurity to \
+                avoid weight exfiltration. Arithmetic like 5 x 3 and identifiers like \
+                snake_case_names must survive the parser untouched.
                 """,
             source: "LessWrong",
             matchedArea: "ai_open_source",
@@ -193,7 +212,14 @@ enum Snapshot {
         ),
         Article(
             title: "A shorter headline",
-            summary: "Body copy for the second card, long enough to wrap onto a second line and be clamped.",
+            summary: """
+                The filing sets out three changes, and the card excerpt has to \
+                flatten all of this back to plain prose:
+
+                - A **$21.7M** round led by Khosla Ventures
+                - Two board seats, one of them independent
+                - A commitment to publish the eval harness
+                """,
             source: "Hacker News Front Page",
             matchedArea: "embedded_wearables",
             score: 0.4834,

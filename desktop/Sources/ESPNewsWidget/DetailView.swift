@@ -72,20 +72,26 @@ struct DetailView: View {
                     Text(article.source)
                         .font(.system(size: Theme.metaSize))
                         .tracking(Theme.metaTracking)
-                        .foregroundStyle(Theme.inkSoft(0.62))
+                        .foregroundStyle(Theme.inkSoft(Theme.source))
 
                     Rectangle()
-                        .fill(Theme.ink.opacity(0.18))
+                        .fill(Theme.ink.opacity(Theme.hairline))
                         .frame(height: 1)
                         .padding(.vertical, 2)
 
                     // The empty case is real: a fetch failure leaves the RSS
                     // summary, and some feeds ship nothing worth showing.
-                    Text(article.summary.isEmpty ? "(no summary in the feed)" : article.summary)
-                        .font(.system(size: Theme.bodySize))
-                        .foregroundStyle(Theme.inkSoft(0.82))
-                        .lineSpacing(Theme.bodyLeading)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if article.summary.isEmpty {
+                        Text("(no summary in the feed)")
+                            .font(.system(size: Theme.bodySize))
+                            .foregroundStyle(Theme.inkSoft(Theme.source))
+                    } else {
+                        // Blocks rather than one Text: the summary may carry
+                        // bullets, and a marker has to sit outside the text
+                        // column for wrapped lines to indent correctly.
+                        SummaryBody(text: article.summary,
+                                    color: Theme.ink.opacity(Theme.bodyInk))
+                    }
 
                     // A Button rather than a Link: Link has no useful
                     // behaviour for a malformed url, and ImageRenderer draws

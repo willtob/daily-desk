@@ -55,7 +55,21 @@ enum Theme {
 
     /// Secondary text on a card. Opacity rather than a second colour, so it
     /// stays correct on every tint from #FEE182 to #D6683F.
-    static func inkSoft(_ alpha: Double = 0.58) -> Color { ink.opacity(alpha) }
+    static func inkSoft(_ alpha: Double = cardExcerpt) -> Color { ink.opacity(alpha) }
+
+    // Ink levels, now shared with the firmware's INK_* constants so a story
+    // reads the same on both screens.
+    //
+    // These were 0.58 for the card excerpt and 0.82 for the body, on the
+    // reasoning that this side has the whole San Francisco family and can
+    // build hierarchy from weight where the device has to use ink. True in
+    // principle; the values were still too light to read comfortably on either.
+    // The prose is the content — it gets full-strength ink, and hierarchy comes
+    // from size and spacing. Only genuinely secondary things stay knocked back.
+    static let cardExcerpt: Double = 0.84   // firmware INK_SOFT   214/255
+    static let source:      Double = 0.71   // firmware INK_SOURCE 180/255
+    static let bodyInk:     Double = 1.00   // firmware INK_BODY   255/255
+    static let hairline:    Double = 0.25   // firmware INK_HAIRLINE 64/255
 
     // MARK: - Type
     //
@@ -69,7 +83,7 @@ enum Theme {
 
     static let metaTracking: CGFloat = 0.9
     static let titleLeading: CGFloat = 1.5
-    static let bodyLeading:  CGFloat = 3
+    static let bodyLeading:  CGFloat = 5   // firmware runs 6 at 14 px; scaled
 
     // MARK: - Layout
 

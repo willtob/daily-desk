@@ -22,30 +22,49 @@ struct RootView: View {
     /// Which story is open over the deck, if any.
     @State private var openIndex: Int?
 
+    /// Where the top card is, so a story can grow out of it. Zero until the
+    /// deck has laid out — see CardFrameKey.
+    @State private var cardRect: CGRect = .zero
+    /// Whether the open story has finished growing to fill the panel.
+    @State private var expanded = false
+    /// Cursor presence, for the idle fade.
+    @State private var hovering = false
+
+    /// Opening is the moment worth dwelling on; leaving is not. Both are
+    /// damped close to critical — the deck flip gets a bounce because a card
+    /// landing should, but a whole screen that overshoots reads as a glitch.
+    private static let expandAnim   = Animation.spring(response: 0.40, dampingFraction: 0.86)
+    private static let collapseAnim = Animation.spring(response: 0.28, dampingFraction: 0.92)
+
+    /// How far the panel fades when the pointer is elsewhere. Enough to sink
+    /// into the wallpaper, not so far that the headline stops being readable —
+    /// the whole point is to be glanceable without being asked.
+    private static let idleOpacity = 0.55
+
     var body: some View {
-        ZStack {
-            Theme.bg
+        GeometryReader { geo in
+            ZStack {
+                Theme.bg
 
-            VStack(spacing: 0) {
-                header
-                deck
-                nav
-            }
+                VStack(spacing: 0) {
+                    header
+                    deck
+                    nav
+                }
 
-            if let openIndex, openIndex < store.articles.count {
-                DetailView(
-                    article: store.articles[openIndex],
-                    index: openIndex,
-                    client: store.client,
-                    onBack: close,
-                    audio: audio
-                )
-                // Up from the deck and back down into it — the story comes
-                // out of the card rather than replacing the screen.
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .zIndex(2)
+                if let openIndex, openIndex < store.articles.count {
+                    story(at: openIndex, panel: geo.size)
+                }
             }
+            .coordinateSpace(name: DeckView.space)
+            .onPreferenceChange(CardFrameKey.self) { cardRect = $0 }
         }
+        // Sink into the wallpaper when nobody is looking. Only on the desktop:
+        // floating placement is an explicit "show me this now", and fading
+        // something the user just asked to see would be perverse.
+        .opacity(dimmed ? Self.idleOpacity : 1)
+        .animation(.easeOut(duration: 0.25), value: dimmed)
+        .onHover { hovering = $0 }
         // The window itself is transparent; this is the widget's real edge.
         .clipShape(RoundedRectangle(cornerRadius: Theme.shellRadius, style: .continuous))
         .overlay(
@@ -72,6 +91,56 @@ struct RootView: View {
         .onKeyPress(.leftArrow)  { step(-1); return .handled }
         .onKeyPress(.rightArrow) { step(1);  return .handled }
         .onKeyPress(.space)      { open();   return .handled }
+    }
+
+    private var dimmed: Bool {
+        controller.placement == .desktop && !hovering && openIndex == nil
+    }
+
+    // MARK: - The story, grown out of its card
+    //
+    // The card does not slide aside and the story does not arrive from an
+    // edge: the story *is* the card, opened out. It starts at the card's exact
+    // rect, in the card's own tint and corner radius, and grows to fill the
+    // panel. For the first frame the two are indistinguishable, which is what
+    // makes it read as opening the thing you touched rather than as arriving
+    // somewhere else.
+    //
+    // The two frames are the whole trick, and the order matters. The inner one
+    // lays the story out at the *panel's* size, so its text is wrapped for
+    // where it is going; the outer one is the window that grows, anchored top
+    // left, with everything past it clipped away. Laying the story out at the
+    // intermediate size instead would re-wrap every line on every frame, and
+    // the headline would visibly reflow all the way open.
+    //
+    // This mirrors the firmware, where it falls out of LVGL clipping children
+    // to their parent's rectangle; here it has to be asked for.
+
+    @ViewBuilder
+    private func story(at index: Int, panel: CGSize) -> some View {
+        let full = CGRect(origin: .zero, size: panel)
+        // No card to grow from — an empty deck, or a story opened before the
+        // deck has laid out. Opening at full size is right; growing out of the
+        // top-left corner would not be.
+        let target = (expanded || cardRect == .zero) ? full : cardRect
+
+        DetailView(
+            article: store.articles[index],
+            index: index,
+            client: store.client,
+            onBack: close,
+            audio: audio
+        )
+        .frame(width: panel.width, height: panel.height, alignment: .topLeading)
+        .frame(width: target.width, height: target.height, alignment: .topLeading)
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: expanded ? Theme.shellRadius : Theme.cardRadius,
+                style: .continuous
+            )
+        )
+        .position(x: target.midX, y: target.midY)
+        .zIndex(2)
     }
 
     // MARK: - Header
@@ -129,6 +198,11 @@ struct RootView: View {
                 Text(placement.title).tag(placement)
             }
         }
+        Toggle("Open at Login", isOn: Binding(
+            get: { LoginItem.isEnabled },
+            set: { LoginItem.set($0) }
+        ))
+        .disabled(!LoginItem.available)
         Divider()
         Button("Quit") { NSApplication.shared.terminate(nil) }
     }
@@ -141,7 +215,7 @@ struct RootView: View {
             emptyState
         } else {
             DeckView(articles: store.articles, position: position) { index in
-                openIndex = index
+                open(index)
             }
             .padding(.horizontal, Theme.pad)
             .padding(.bottom, 2)
@@ -243,15 +317,33 @@ struct RootView: View {
         }
     }
 
-    private func open() {
+    private func open() { open(current) }
+
+    private func open(_ index: Int) {
         guard openIndex == nil, !store.articles.isEmpty else { return }
-        withAnimation(DeckView.step) { openIndex = current }
+        // Placed on the card first, then grown, in two steps: SwiftUI has to
+        // render the collapsed state once for there to be anything to animate
+        // from. Setting both in the same pass just appears at full size.
+        expanded = false
+        openIndex = index
+        DispatchQueue.main.async {
+            withAnimation(Self.expandAnim) { expanded = true }
+        }
     }
 
     private func close() {
         // Leaving a story stops its narration — otherwise audio keeps playing
         // over a deck you are already flipping through.
         audio.stop()
-        withAnimation(DeckView.step) { openIndex = nil }
+        withAnimation(Self.collapseAnim) { expanded = false }
+
+        // The view can only be removed once it has finished shrinking, and
+        // macOS 14 has no completion handler for withAnimation. The guard is
+        // the point: reopening during the collapse leaves `expanded` true, and
+        // without it this would fire anyway and close the story the reader has
+        // just opened.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) {
+            if !expanded { openIndex = nil }
+        }
     }
 }
