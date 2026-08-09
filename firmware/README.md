@@ -141,20 +141,37 @@ story without moving the device will not dim it. Thresholds and the timeout are
 constants at the top of `src/imu_wake.cpp`, chosen from measurements on the
 board — see CLAUDE.md.
 
-**Turn the panel over and the UI follows.** The same accelerometer reads which
-way gravity lies along the panel's long edge, and flips the display 180° when
-it has settled the other way up — so the board reads correctly whichever end
-the USB cable comes out of. It takes a deliberate turn, not a nudge: the panel
-must be tilted at least ~15° up from flat before the reading counts at all,
-and held for 700 ms before anything happens. Sitting on its stand it has no
-opinion and holds whatever is on screen.
+**Turn the board and the UI follows — all four orientations.** The same
+accelerometer that drives the auto-dim reads which in-plane axis gravity lies
+along: X is the 640 px edge, Y is the 172 px edge, Z is the screen normal and
+only ever says how flat the panel is.
 
-Only 0°↔180° is wired up, on purpose. Both portrait orientations share a
-logical resolution, so flipping costs nothing beyond the transform already
-running every frame in `example_lvgl_flush_cb`, and no widget is touched.
-**Landscape is not a rotation of this UI, it is a second UI** — every dimension
-in `news_ui.cpp` derives from the compile-time `EXAMPLE_LCD_H_RES`/`V_RES`, and
-at 640×172 an article body is about four lines tall.
+It takes a deliberate turn, not a nudge. The panel must be tilted at least
+~15° up from flat before the reading counts, the winning axis must beat the
+other by 30%, and the new orientation must hold for 700 ms. Lying flat it has
+no opinion at all and keeps whatever is on screen — **this is physics, not a
+threshold to tune**: with the screen horizontal, gravity has no in-plane
+component, so spinning the board on the desk is undetectable by an
+accelerometer at any sensitivity. Tilt it up to rotate it.
+
+The two kinds of rotation cost very different amounts:
+
+- **Portrait ↔ portrait (0°↔180°)** is free. Same logical resolution, same
+  widgets; only the transform already running every frame in
+  `example_lvgl_flush_cb` changes, and the screen is invalidated to force a
+  redraw.
+- **Portrait ↔ landscape** is a **full rebuild**. 640×172 is a second layout,
+  not a reflow — the deck loses its peek ledges, the card goes horizontal and
+  the article splits into newspaper columns — so `news_ui_relayout()` tears the
+  widget tree down and builds it again, restoring which story you were on and
+  which view you were in. That is why the 700 ms dwell matters: every spurious
+  landscape decision is a rebuild, not a redraw.
+
+In landscape the article body runs down **two ~300 px columns and scrolls
+sideways**, showing roughly twice what a single 640-wide column would at
+172 px tall. The break between columns is measured with `lv_txt_get_size()`
+rather than estimated from character counts, and snapped to a space so it is
+UTF-8 safe.
 
 The **BOOT** button (GPIO 0) is wired as: *back* when a story is open,
 *manual refresh* on the deck or the list. It is the widget's ↻ button.

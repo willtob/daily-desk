@@ -139,18 +139,22 @@
 #define ORIENT_AXIS       0       /* X — the 640 px edge */
 #define ORIENT_UP_SIGN   (-1)
 
-/* The other in-plane axis: X, the 172 px edge. Gravity lands here instead when
- * the board is on its side, and its sign says which side. Z is the screen
- * normal and is never consulted — it only ever says how flat the panel is. */
+/* The other in-plane axis: Y, the 172 px edge. Gravity lands here instead when
+ * the board is on its side, and its sign says which side. */
 #define ORIENT_AXIS_SHORT  1
 
-/* Which landscape a positive X reading means. Verified on the board: the
- * accelerometer capture distinguishes landscape-left from landscape-right, but
- * nothing in it says which one the driver calls 90 — that is a fact about how
- * the panel is mounted, not about the sensor, so it took one look at the
- * screen. 270 first came up inverted; these are the right way round. */
-#define ORIENT_LAND_POS   DISP_ROT_90
-#define ORIENT_LAND_NEG   DISP_ROT_270
+/* Which landscape a positive short-axis reading means. Confirmed on the panel,
+ * which is the only place it can be: the capture separates landscape-left from
+ * landscape-right, but nothing in the sensor data says which one the driver
+ * calls 90 — that is a fact about how the panel is mounted.
+ *
+ * Worth knowing that this is a safe thing to get wrong and a cheap thing to
+ * fix: the two flush_cb transforms are an exact 180 pair (substituting
+ * (639-j, 171-i) into the ROT_90 mapping yields ROT_270), so a wrong choice
+ * here can only ever invert landscape, never skew it, and swapping the two is
+ * always the whole fix. Portrait is unaffected either way. */
+#define ORIENT_LAND_POS   DISP_ROT_270
+#define ORIENT_LAND_NEG   DISP_ROT_90
 
 /* How much the winning axis must beat the other by, x10. Turning the board
  * sweeps through 45 degrees where both read ~0.7 g, and without a margin the
@@ -190,7 +194,7 @@
 
 int  imu_motion = 0;
 bool imu_awake  = true;
-bool imu_orient_trace = true;   /* calibrating the axis swap */
+bool imu_orient_trace = false;
 
 /* Applied rotation, candidate rotation, and when the candidate first appeared.
  * Seeded to the driver's boot rotation so the first poll agrees with what is
