@@ -91,7 +91,17 @@ second pass backfills by score, so the cap shapes the page without shrinking it.
 
 **Cross-run suppression.** `digests/seen.json` remembers which articles have
 already appeared, keyed by canonical URL so a link that picks up tracking params
-still counts. Entries expire after 45 days. Only articles that actually made a
+still counts. Entries expire after 45 days.
+
+A URL is not always one article, though: Time Out's "what to do this weekend"
+and the papers' weekly agendas are rolling pages, one fixed URL re-dated every
+week with new content. So the check is URL *and* date — an article published
+after the day it was last shown counts as new again, which is what keeps a
+weekly roundup from appearing once and then being hidden for the whole
+retention window. A source that bumps its publish date on a copy-edit can
+re-show a story that way; requiring a later calendar day keeps that rare.
+
+Only articles that actually made a
 digest are recorded, and only after the file is written — a crash mid-run can't
 silently suppress them from the next one. Use `--no-seen` to ignore it.
 

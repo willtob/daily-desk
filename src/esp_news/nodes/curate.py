@@ -121,7 +121,7 @@ def curate_articles(
 
     # 1. Drop anything a previous digest already carried.
     if seen is not None:
-        fresh = [a for a in ranked if not seen.contains(a.url)]
+        fresh = [a for a in ranked if not seen.contains(a.url, a.published)]
         repeats = len(ranked) - len(fresh)
         if repeats:
             logger.info("Curate: skipped %d articles seen in earlier digests", repeats)
