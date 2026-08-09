@@ -21,6 +21,11 @@ void imu_wake_poll(void);
 extern int  imu_motion;
 extern bool imu_awake;
 
+/* Set true to print the raw accelerometer axes twice a second. This is how
+ * ORIENT_AXIS and ORIENT_UP_SIGN in imu_wake.cpp were established, and the
+ * only way to re-establish them if the IMU is ever placed differently. */
+extern bool imu_orient_trace;
+
 #ifdef __cplusplus
 }
 #endif

@@ -6,7 +6,8 @@ __pycache__/
 # Secrets
 .env
 
-# Embedding cache (Phase 3) — regenerates itself, just costs an API call
+# Caches: embeddings (Phase 3), fetched pages and LLM summaries (Phase 9).
+# All regenerate themselves; they just cost an API call or a fetch.
 .cache/
 
 # Generated digests (Phase 5), the API payload (Phase 6), and the seen store

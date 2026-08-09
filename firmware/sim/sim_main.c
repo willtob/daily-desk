@@ -41,7 +41,7 @@ int sim_boot_button_down = 0;      /* read by the Arduino.h shim */
 static SDL_Window   *window;
 static SDL_Renderer *renderer;
 static SDL_Texture  *texture;
-static uint32_t     *framebuf;     /* ARGB8888, EXAMPLE_LCD_H_RES x V_RES */
+static uint32_t     *framebuf;     /* ARGB8888, sim_w x V_RES */
 
 /* Two full-screen buffers and full_refresh, exactly as lvgl_port.c sets the
  * board up. This used to be one 172x80 partial buffer, which renders the same
@@ -52,8 +52,17 @@ static uint32_t     *framebuf;     /* ARGB8888, EXAMPLE_LCD_H_RES x V_RES */
  * the sim has to use the mode the hardware uses or it cannot see the bug it
  * exists to catch. */
 static lv_disp_draw_buf_t draw_buf;
+/* Both orientations are the same pixel count, so one pair of buffers serves
+ * either — only the resolution the driver is told about changes. */
 static lv_color_t buf1[EXAMPLE_LCD_H_RES * EXAMPLE_LCD_V_RES];
 static lv_color_t buf2[EXAMPLE_LCD_H_RES * EXAMPLE_LCD_V_RES];
+
+/* Panel geometry, swapped by --landscape. The board reaches the same state by
+ * being turned over; this is the only way to see it without standing there. */
+static int rotate_land = 0;  /* --rotate: portrait, then switch to landscape at runtime */
+static int relayout = 0;   /* --relayout: rebuild the tree once, then continue */
+static int sim_w = EXAMPLE_LCD_H_RES;
+static int sim_h = EXAMPLE_LCD_V_RES;
 
 /* LVGL hands us 16-bit colour (LV_COLOR_DEPTH 16, matching the board); widen
  * it to ARGB8888 for SDL. */
@@ -63,7 +72,7 @@ static void disp_flush(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *px
         for (int x = area->x1; x <= area->x2; x++) {
             /* lv_color_to32 rather than poking at ch.red/green/blue: the 16-bit
              * struct splits green when LV_COLOR_16_SWAP is set. */
-            framebuf[y * EXAMPLE_LCD_H_RES + x] = lv_color_to32(*px++);
+            framebuf[y * sim_w + x] = lv_color_to32(*px++);
         }
     }
     lv_disp_flush_ready(drv);
@@ -196,7 +205,7 @@ static void inject_drag(int x0, int y0, int x1, int y1)
 static void present(void)
 {
     SDL_UpdateTexture(texture, NULL, framebuf,
-                      EXAMPLE_LCD_H_RES * (int)sizeof(uint32_t));
+                      sim_w * (int)sizeof(uint32_t));
     SDL_RenderClear(renderer);
     SDL_RenderCopy(renderer, texture, NULL, NULL);
     SDL_RenderPresent(renderer);
@@ -230,12 +239,12 @@ typedef struct {
 static void save_bmp(const char *path)
 {
     SDL_Surface *s = SDL_CreateRGBSurfaceFrom(
-        framebuf, EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES, 32,
-        EXAMPLE_LCD_H_RES * (int)sizeof(uint32_t),
+        framebuf, sim_w, sim_h, 32,
+        sim_w * (int)sizeof(uint32_t),
         0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
     if (!s) { fprintf(stderr, "surface failed: %s\n", SDL_GetError()); return; }
     if (SDL_SaveBMP(s, path) != 0) fprintf(stderr, "save failed: %s\n", SDL_GetError());
-    else if (!film) printf("[sim] wrote %s (%dx%d)\n", path, EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES);
+    else if (!film) printf("[sim] wrote %s (%dx%d)\n", path, sim_w, sim_h);
     SDL_FreeSurface(s);
 }
 
@@ -268,6 +277,12 @@ int main(int argc, char **argv)
         }
         else if (!strcmp(argv[i], "--film") && i + 1 < argc) {
             act[act_n].kind = 'f'; act[act_n].s = argv[++i]; act_n++;
+        }
+        else if (!strcmp(argv[i], "--relayout")) relayout = 1;
+        else if (!strcmp(argv[i], "--rotate")) rotate_land = 1;
+        else if (!strcmp(argv[i], "--landscape")) {
+            sim_w = EXAMPLE_LCD_V_RES;   /* 640 */
+            sim_h = EXAMPLE_LCD_H_RES;   /* 172 */
         }
         else if (!strcmp(argv[i], "--geom")) {
             act[act_n].kind = 'g'; act[act_n].n = 1; act_n++;
@@ -307,24 +322,24 @@ int main(int argc, char **argv)
     }
     window = SDL_CreateWindow("NewsDisplay 172x640",
                               SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                              EXAMPLE_LCD_H_RES * SCALE, EXAMPLE_LCD_V_RES * SCALE,
+                              sim_w * SCALE, sim_h * SCALE,
                               shot ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN);
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
     texture  = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
                                  SDL_TEXTUREACCESS_STREAMING,
-                                 EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES);
-    framebuf = calloc((size_t)EXAMPLE_LCD_H_RES * EXAMPLE_LCD_V_RES, sizeof(uint32_t));
+                                 sim_w, sim_h);
+    framebuf = calloc((size_t)sim_w * sim_h, sizeof(uint32_t));
 
     lv_init();
     lv_disp_draw_buf_init(&draw_buf, buf1, buf2,
-                          EXAMPLE_LCD_H_RES * EXAMPLE_LCD_V_RES);
+                          sim_w * sim_h);
 
     static lv_disp_drv_t disp_drv;
     lv_disp_drv_init(&disp_drv);
     disp_drv.draw_buf  = &draw_buf;
     disp_drv.flush_cb  = disp_flush;
-    disp_drv.hor_res   = EXAMPLE_LCD_H_RES;
-    disp_drv.ver_res   = EXAMPLE_LCD_V_RES;
+    disp_drv.hor_res   = sim_w;
+    disp_drv.ver_res   = sim_h;
     disp_drv.full_refresh = 1;          /* as the AXS15231B driver requires */
     lv_disp_drv_register(&disp_drv);
 
@@ -341,6 +356,42 @@ int main(int argc, char **argv)
         /* Let the 250 ms refresh callback run at least once so the deck is
          * populated, then replay the scripted inputs in order. */
         pump(60);
+
+        /* Exercise the rotation rebuild without needing to resize the window:
+         * relayout at the SAME geometry still runs the whole dangerous path —
+         * kill the animations, delete every widget, rebuild, restore the
+         * reader's place. A use-after-free from an animation still pointing at
+         * a freed object shows up here as a crash, which is the only cheap way
+         * to find it; on the board it presents as the display freezing several
+         * seconds after a rotation, nowhere near the cause. */
+        if (relayout) {
+            news_ui_relayout();
+            pump(30);
+        }
+
+        /* --rotate: the real thing. Boot portrait, then switch the display to
+         * landscape at runtime exactly as lvgl_port.c's apply_rotation() does,
+         * and rebuild. This is the path the board actually takes and the one
+         * --relayout cannot reach, because --relayout rebuilds at the geometry
+         * it already had — so it proves the teardown is safe while proving
+         * nothing about whether the new size is picked up. */
+        if (rotate_land) {
+            sim_w = EXAMPLE_LCD_V_RES;   /* 640 */
+            sim_h = EXAMPLE_LCD_H_RES;   /* 172 */
+
+            free(framebuf);
+            framebuf = calloc((size_t)sim_w * sim_h, sizeof(uint32_t));
+            SDL_DestroyTexture(texture);
+            texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+                                        SDL_TEXTUREACCESS_STREAMING, sim_w, sim_h);
+
+            disp_drv.hor_res = sim_w;
+            disp_drv.ver_res = sim_h;
+            lv_disp_drv_update(lv_disp_get_default(), &disp_drv);
+
+            news_ui_relayout();
+            pump(30);
+        }
 
         for (int i = 0; i < act_n; i++) {
             switch (act[i].kind) {
@@ -365,7 +416,7 @@ int main(int argc, char **argv)
             }
 
             case 't':
-                inject_tap(act[i].x >= 0 ? act[i].x : EXAMPLE_LCD_H_RES / 2,
+                inject_tap(act[i].x >= 0 ? act[i].x : sim_w / 2,
                            act[i].n, act[i].settle);
                 break;
 

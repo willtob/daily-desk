@@ -46,6 +46,7 @@
 #include "news_audio.h"
 #include "drv/lcd_bl_bsp/lcd_bl_pwm_bsp.h"
 #include "lvgl.h"
+#include "lvgl_port.h"
 
 /* ── QMI8658 registers ─────────────────────────────────────────────────
  * Values checked against SensorLib's QMI8658Constants.h rather than recalled;
@@ -93,8 +94,111 @@
  * re-dim something that needs IDLE_MS of stillness. */
 #define WAKE_MOTION   1200
 
+/* ── Which way up ─────────────────────────────────────────────────────────
+ *
+ * The same gravity vector that is useless for detecting motion is exactly
+ * what tells you which way up the panel is: at rest it points down, so its
+ * component along the panel's long edge changes sign when the board is turned
+ * over. No gyro needed — a gyro measures rotation *rate*, which is zero once
+ * you have finished turning it, and orientation is a question about where it
+ * has settled.
+ *
+ * **All four orientations are wired up, and they are not equally cheap.**
+ * A portrait-to-portrait flip costs nothing but the transform already running
+ * in the flush callback — same logical resolution, same widgets. Turning onto
+ * the side is a different thing entirely: 640x172 is a second layout, so the
+ * whole widget tree is torn down and rebuilt by news_ui_relayout(). That is
+ * why the dwell below matters more than it looks. Every spurious landscape
+ * decision is a full rebuild, not a redraw.
+ *
+ * ── Two constants, both measured on the board ────────────────────────────
+ *
+ * ORIENT_AXIS is which raw accelerometer axis runs along the panel's long
+ * (640 px) edge; ORIENT_AXIS_SHORT is the 172 px edge. Z is the screen normal
+ * and is never consulted — it only ever says how flat the panel is.
+ *
+ * **X is the long edge and Y is the short edge**, and getting this backwards
+ * is worth understanding because the wrong answer looked well-supported.
+ *
+ * The tempting reasoning: gravity reads a full 1 g on Y whenever the board is
+ * left alone (ay -16713 over two long captures), the display is portrait, so
+ * Y must be the vertical/long axis. That inference has an unstated premise —
+ * that the board rests in portrait — and the premise was false.
+ *
+ * What settled it was a behavioural observation, not a capture: holding the
+ * board *horizontal* and turning it 180 flipped the display, back when only
+ * the Y axis could trigger a flip. If Y were the long edge, holding the board
+ * horizontal puts ay at ~0 and nothing could have flipped. It flipped, so Y is
+ * vertical in that position, so Y is the SHORT edge.
+ *
+ * The lesson for the next person: a static capture cannot tell you which axis
+ * is which unless you already know how the board was oriented when it was
+ * taken. Two positions that agree with each other can still agree about the
+ * wrong thing. Prefer a test where the *display* reacts, because that closes
+ * the loop through the panel instead of stopping at the sensor. */
+#define ORIENT_AXIS       0       /* X — the 640 px edge */
+#define ORIENT_UP_SIGN   (-1)
+
+/* The other in-plane axis: X, the 172 px edge. Gravity lands here instead when
+ * the board is on its side, and its sign says which side. Z is the screen
+ * normal and is never consulted — it only ever says how flat the panel is. */
+#define ORIENT_AXIS_SHORT  1
+
+/* Which landscape a positive X reading means. Verified on the board: the
+ * accelerometer capture distinguishes landscape-left from landscape-right, but
+ * nothing in it says which one the driver calls 90 — that is a fact about how
+ * the panel is mounted, not about the sensor, so it took one look at the
+ * screen. 270 first came up inverted; these are the right way round. */
+#define ORIENT_LAND_POS   DISP_ROT_90
+#define ORIENT_LAND_NEG   DISP_ROT_270
+
+/* How much the winning axis must beat the other by, x10. Turning the board
+ * sweeps through 45 degrees where both read ~0.7 g, and without a margin the
+ * decision oscillates between portrait and landscape on sensor noise for the
+ * whole of that sweep. 13 = the winner must lead by 30%. */
+#define ORIENT_RATIO   13
+
+/* 1 g in LSB. CTRL2 selects the +/-2 g range, so full scale 32768 = 2 g. */
+#define ONE_G   16384
+
+/* How much gravity has to lie along the long edge before the reading means
+ * anything. Lying flat, gravity is nearly all on the screen normal and the
+ * in-plane component is small and points in an arbitrary direction — without
+ * a deadband a panel resting face-up would pick a rotation out of noise.
+ *
+ * A quarter g, i.e. about 15 degrees up from flat. Chosen against the measured
+ * resting value of 3900 (0.24 g), which lands just below it: sitting on its
+ * stand, the panel has no opinion and holds whatever is on screen.
+ *
+ * Sitting near the threshold is safe, which is what makes a low value
+ * defensible here. Crossing it does not cause a flip — it only lets the panel
+ * *agree with the rotation it already has*. Flipping requires a reading past
+ * the threshold with the OPPOSITE sign, which needs the board physically
+ * turned over. So the threshold trades responsiveness against nothing worse
+ * than inertia, and the failure mode of setting it too low is a flip when you
+ * tilt a flat panel, not a flip at rest.
+ *
+ * Raise it toward ONE_G/2 to demand a more deliberate gesture; lower it to
+ * ~2500 to make the flip work while the panel is still on its stand. */
+#define ORIENT_MIN   (ONE_G / 4)
+
+/* And how long it has to stay that way. Turning the board over sweeps through
+ * every angle including the wrong one, so acting on the first sample that
+ * crosses zero would flip the display mid-turn and possibly back again. At a
+ * 100 ms poll this is seven consecutive agreeing samples. */
+#define ORIENT_HOLD_MS   700
+
 int  imu_motion = 0;
 bool imu_awake  = true;
+bool imu_orient_trace = true;   /* calibrating the axis swap */
+
+/* Applied rotation, candidate rotation, and when the candidate first appeared.
+ * Seeded to the driver's boot rotation so the first poll agrees with what is
+ * already on screen and nothing flips at startup. */
+static int      orient_rot  = DISP_ROT_180;
+static int      orient_cand = DISP_ROT_180;
+static uint32_t orient_since = 0;
+static uint32_t orient_last_trace = 0;
 
 static bool     present     = false;
 static int16_t  prev[3]     = { 0, 0, 0 };
@@ -151,6 +255,54 @@ void imu_wake_init(void)
     Serial.println("[imu] QMI8658 ready — panel dims when idle");
 }
 
+/* Decide which way up the panel is and flip the display if it has settled the
+ * other way. Runs on the LVGL task, under the LVGL lock, which is why it can
+ * only use the _locked form of the rotation call. */
+static void orient_update(const int16_t now[3])
+{
+    int32_t lng = (int32_t)now[ORIENT_AXIS]       * ORIENT_UP_SIGN;
+    int32_t sht = (int32_t)now[ORIENT_AXIS_SHORT];
+    int32_t alng = lng < 0 ? -lng : lng;
+    int32_t asht = sht < 0 ? -sht : sht;
+
+    if (imu_orient_trace && millis() - orient_last_trace > 500) {
+        orient_last_trace = millis();
+        Serial.printf("[orient] ax=%6d ay=%6d az=%6d  lng=%6d sht=%6d  rot=%d\n",
+                      now[0], now[1], now[2], (int)lng, (int)sht, orient_rot);
+    }
+
+    /* Whichever in-plane axis carries the most gravity decides, provided it
+     * carries enough of it and clearly beats the other. Failing either test
+     * means no opinion: the panel is lying too flat to say, or it is being
+     * held at a diagonal on the way between two orientations.
+     *
+     * No opinion holds whatever is on screen — deliberately not "revert to
+     * default", because setting the panel down on a desk must not undo the
+     * rotation you just made. */
+    int want;
+    if (alng >= ORIENT_MIN && alng * 10 > asht * ORIENT_RATIO) {
+        want = (lng > 0) ? DISP_ROT_180 : DISP_ROT_0;
+    } else if (asht >= ORIENT_MIN && asht * 10 > alng * ORIENT_RATIO) {
+        want = (sht > 0) ? ORIENT_LAND_POS : ORIENT_LAND_NEG;
+    } else {
+        orient_cand  = orient_rot;
+        orient_since = millis();
+        return;
+    }
+
+    if (want != orient_cand) {
+        orient_cand  = want;
+        orient_since = millis();
+        return;
+    }
+
+    if (want != orient_rot && millis() - orient_since >= ORIENT_HOLD_MS) {
+        orient_rot = want;
+        Serial.printf("[orient] flip -> %d\n", want);
+        lvgl_port_set_rotation_locked(want);
+    }
+}
+
 void imu_wake_poll(void)
 {
     if (!present) return;
@@ -170,6 +322,8 @@ void imu_wake_poll(void)
         }
         memcpy(prev, now, sizeof(prev));
         have_prev = true;
+
+        orient_update(now);
     }
 
     /* Input counts as use, so reading a long story without moving the panel

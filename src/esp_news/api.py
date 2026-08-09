@@ -23,6 +23,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
+from openai import APITimeoutError, OpenAIError
 
 # Load .env at import. Without this only /refresh sees the key (it calls
 # init_tracing itself), and /audio fails with a confusing 503 despite the key
@@ -190,7 +191,7 @@ def health() -> dict:
 def get_audio(index: int) -> Response:
     """Raw PCM narration of article ``index`` (0-based) from the current digest.
 
-    24 kHz, 16-bit signed little-endian, mono — the firmware writes these bytes
+    16 kHz, 16-bit signed little-endian, mono — the firmware writes these bytes
     to I2S directly, so no decoder is needed on the device. Synthesis is cached
     by content, so replaying an article costs nothing.
 
@@ -215,6 +216,14 @@ def get_audio(index: int) -> Response:
         raise HTTPException(status_code=503, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+    except APITimeoutError:
+        # Synthesis stalled upstream. 504 rather than 500 so it reads as
+        # "try again", which is exactly right — the device's next tap usually
+        # succeeds, and a completed synthesis lands in the cache either way.
+        raise HTTPException(status_code=504, detail="Speech synthesis timed out.")
+    except OpenAIError as exc:
+        logger.warning("Synthesis failed for article %d: %s", index, exc)
+        raise HTTPException(status_code=502, detail=f"Speech synthesis failed: {exc}")
 
     return Response(
         content=audio,

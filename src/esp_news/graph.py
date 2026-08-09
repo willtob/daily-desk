@@ -1,12 +1,12 @@
 """The LangGraph pipeline, assembled from nodes built and tested standalone.
 
-    ingest -> dedup -> score -> curate -> digest
+    ingest -> dedup -> score -> curate -> summarize -> digest
 
 Each node was runnable on its own first (esp-ingest, esp-dedup, esp-score,
-esp-curate); this only wires them together. Config that a node needs but the
-state doesn't carry — feeds, the interest profile, thresholds — is closed over
-here rather than stuffed into DigestState, which keeps the state shape exactly
-what the plan specified.
+esp-curate, esp-summarize); this only wires them together. Config that a node
+needs but the state doesn't carry — feeds, the interest profile, thresholds —
+is closed over here rather than stuffed into DigestState, which keeps the state
+shape exactly what the plan specified.
 """
 
 from __future__ import annotations
@@ -25,7 +25,9 @@ from esp_news.nodes.dedup import dedup_articles
 from esp_news.nodes.digest import render_digest
 from esp_news.nodes.ingest import ingest_articles
 from esp_news.nodes.score import score_articles
+from esp_news.nodes.summarize import summarize_articles
 from esp_news.seen import SeenStore
+from esp_news.summarize import Summarizer
 
 logger = logging.getLogger(__name__)
 
@@ -36,13 +38,20 @@ def build_digest_graph(
     *,
     client: EmbeddingClient | None = None,
     seen: SeenStore | None = None,
+    summarizer: Summarizer | None = None,
+    use_llm_summary: bool = True,
     similarity_threshold: float = 0.6,
     top_n: int = 10,
     per_area_cap: int | None = 3,
     min_summary_chars: int = 1,
     when: date | None = None,
 ):
-    """Compile the five-node digest graph. Returns a compiled LangGraph."""
+    """Compile the six-node digest graph. Returns a compiled LangGraph.
+
+    ``use_llm_summary=False`` skips the Phase 9 fetch-and-summarize step and
+    renders the RSS blurbs, which is what ``esp-digest --no-llm`` wants when
+    the network is flaky or the run just needs to be free.
+    """
 
     def ingest_node(state: DigestState) -> dict:
         return {"raw_articles": ingest_articles(config)}
@@ -72,6 +81,16 @@ def build_digest_graph(
             )
         }
 
+    def summarize_node(state: DigestState) -> dict:
+        # Writes back to curated_articles rather than a new state key: the node
+        # enriches the front page in place, and every downstream reader (digest,
+        # the CLI, the API payload) already reads that list.
+        return {
+            "curated_articles": summarize_articles(
+                state.curated_articles, summarizer=summarizer
+            )
+        }
+
     def digest_node(state: DigestState) -> dict:
         meta = {
             "scored_count": len(state.scored_articles),
@@ -96,7 +115,14 @@ def build_digest_graph(
     graph.add_edge("ingest", "dedup")
     graph.add_edge("dedup", "score")
     graph.add_edge("score", "curate")
-    graph.add_edge("curate", "digest")
+
+    if use_llm_summary:
+        graph.add_node("summarize", summarize_node)
+        graph.add_edge("curate", "summarize")
+        graph.add_edge("summarize", "digest")
+    else:
+        graph.add_edge("curate", "digest")
+
     graph.add_edge("digest", END)
 
     return graph.compile()

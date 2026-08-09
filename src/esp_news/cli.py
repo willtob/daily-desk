@@ -16,7 +16,9 @@ from esp_news.nodes.dedup import dedup_articles
 from esp_news.nodes.digest import digest_payload, write_digest, write_digest_json
 from esp_news.nodes.ingest import ingest_articles
 from esp_news.nodes.score import score_articles
+from esp_news.nodes.summarize import summarize_articles
 from esp_news.seen import SeenStore
+from esp_news.summarize import DEFAULT_SUMMARY_MODEL, DEFAULT_TARGET_CHARS, Summarizer
 from esp_news.tracing import init_tracing
 
 
@@ -250,13 +252,95 @@ def curate_main() -> None:
         print(f"\n  (seen store holds {len(seen)} urls; not updated by this command)")
 
 
+def _add_summary_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--summary-model",
+        default=DEFAULT_SUMMARY_MODEL,
+        help=f"Model that writes the summaries (default {DEFAULT_SUMMARY_MODEL}).",
+    )
+    parser.add_argument(
+        "--target-chars",
+        type=int,
+        default=DEFAULT_TARGET_CHARS,
+        help=f"Summary length to aim for (default {DEFAULT_TARGET_CHARS}).",
+    )
+
+
+def summarize_main() -> None:
+    """Phase 9 checkpoint: are the LLM summaries actually better than the RSS ones?
+
+    Prints both, side by side, because that's the only question worth asking of
+    this node — and the failure mode to watch for is a confident summary of an
+    article that never got fetched.
+    """
+    parser = _base_parser("Phase 9 — fetch articles and write real summaries.")
+    _add_threshold_arg(parser)
+    _add_curate_args(parser)
+    _add_summary_args(parser)
+    parser.add_argument("--interests", default=None, help="Path to interests.yaml.")
+    parser.add_argument("--no-cache", action="store_true", help="Bypass embed cache.")
+    args = parser.parse_args()
+
+    _configure_logging()
+    init_tracing()
+
+    profile = load_interests_profile(args.interests)
+    raw, _ = _load_and_ingest(args)
+    deduped = dedup_articles(raw, similarity_threshold=args.threshold)
+
+    try:
+        scored = score_articles(
+            deduped, profile=profile, client=_build_client(profile, args.no_cache)
+        )
+        curated = curate_articles(
+            scored,
+            top_n=args.top,
+            per_area_cap=args.per_area_cap,
+            seen=None if args.no_seen else SeenStore(),
+            min_summary_chars=args.min_summary,
+            )
+        summarized = summarize_articles(
+            curated,
+            summarizer=Summarizer(
+                model=args.summary_model, target_chars=args.target_chars
+            ),
+        )
+    except MissingAPIKeyError as exc:
+        raise SystemExit(f"\n{exc}")
+
+    if not summarized:
+        raise SystemExit("\nNothing cleared curation — try --no-seen or a wider --hours.")
+
+    print("\n=== RSS summary vs. LLM summary ===")
+    for rank, art in enumerate(summarized, 1):
+        print(f"\n{rank:>2}. [{art.source}] {art.title[:76]}")
+        print(f"    source: {art.summary_source}")
+        print(f"    RSS ({len(art.summary):>4}): {art.summary[:200]}")
+        if art.long_summary:
+            print(f"    LLM ({len(art.long_summary):>4}): {art.long_summary}")
+
+    by_source = Counter(a.summary_source.split(":")[0] for a in summarized)
+    print("\n  outcome: " + ", ".join(f"{k}={v}" for k, v in by_source.most_common()))
+    fell_back = [a for a in summarized if a.summary_source.startswith("rss:")]
+    if fell_back:
+        print("  fell back to RSS:")
+        for art in fell_back:
+            print(f"    [{art.source}] {art.summary_source} — {art.title[:56]}")
+
+
 def digest_main() -> None:
     """Phase 5 checkpoint: run the whole graph and write a real digest."""
     parser = _base_parser("Phase 5 — run the full pipeline and write a digest.")
     _add_threshold_arg(parser)
     _add_curate_args(parser)
+    _add_summary_args(parser)
     parser.add_argument("--interests", default=None, help="Path to interests.yaml.")
     parser.add_argument("--no-cache", action="store_true", help="Bypass embed cache.")
+    parser.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="Skip the Phase 9 summarize step and use the raw RSS blurbs.",
+    )
     parser.add_argument(
         "--out", default=None, help="Directory for the digest (default: digests/)."
     )
@@ -282,11 +366,15 @@ def digest_main() -> None:
             profile,
             client=_build_client(profile, args.no_cache),
             seen=seen,
+            summarizer=Summarizer(
+                model=args.summary_model, target_chars=args.target_chars
+            ),
+            use_llm_summary=not args.no_llm,
             similarity_threshold=args.threshold,
             top_n=args.top,
             per_area_cap=args.per_area_cap,
             min_summary_chars=args.min_summary,
-        )
+            )
     except MissingAPIKeyError as exc:
         raise SystemExit(f"\n{exc}")
 

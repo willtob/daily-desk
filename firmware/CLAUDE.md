@@ -360,6 +360,45 @@ nothing rather than the smallest number that works. `WAKE_MOTION` is 1200, i.e.
 Idleness is motion *and* `lv_disp_get_inactive_time()`, so touch and BOOT keep
 it lit for free, and it will not dim mid-narration.
 
+### The UI flips when the board is turned over
+
+Same file, same accelerometer sample — orientation is a *gravity* question, not
+a gyro one. A gyro measures rotation rate, which is zero once you have finished
+turning the board; where it has settled is what the display needs to know.
+
+**Never call `lvgl_port_set_rotation()` from LVGL code.** `lvgl_mux` is a plain
+`xSemaphoreCreateMutex()`, which is **not recursive**, and `imu_wake_poll()`
+runs from an `lv_timer` — i.e. already inside the lock. Taking it twice hangs
+the display task permanently, with no output to say why. Use
+`lvgl_port_set_rotation_locked()` from anything running under `lv_timer_handler`
+or an event callback; the locking version is for other tasks.
+
+Only 0↔180 is wired up. Same logical resolution means `apply_rotation()` can
+skip `lv_disp_drv_update()` and just invalidate the active screen — the update
+call would re-fire `LV_EVENT_SIZE_CHANGED` and dirty every layout for a size
+that did not change, which is the state churn that has broken deck scroll and
+selection before. The invalidate is **not** optional: with `full_refresh` the
+panel is only written when something is dirty, so a flip on a static screen
+would otherwise not show up until the next digest poll redrew something.
+
+The axis mapping is a physical fact about the PCB and was read off the board:
+
+| position | ax | ay | az |
+|---|---|---|---|
+| held vertical | −1593 | **−16713** | −590 |
+| resting on a stand | +900 | −3900 | **+14500** |
+
+Gravity is entirely on Y standing up and moves to Z laid back, so **Y is the
+640 px edge, Z is the screen normal, X is the 172 px edge**. The sign is the
+half that is easy to get backwards, and it does not fail quietly — guessing
+`+1` inverted the display in the position the board actually lives in. `ay` is
+negative the normal way up, so `ORIENT_UP_SIGN` is `-1`.
+
+`ORIENT_MIN` is a quarter g, just above the measured resting 3900, so the panel
+has no opinion on its stand. Sitting near the threshold is harmless: crossing
+it only lets the panel *agree with the rotation it already has*, and flipping
+needs a reading past it with the opposite sign.
+
 ### The frame budget, measured
 
 Do not guess at this and do not tune `LV_DISP_DEF_REFR_PERIOD` hoping it helps.

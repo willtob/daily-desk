@@ -21,7 +21,12 @@ class Article(BaseModel):
     theme: str  # feed theme tag, e.g. "embedded_wearables"
     published: datetime | None = None
     summary: str = ""  # raw RSS summary/description (HTML stripped in Phase 2)
-    content: str | None = None  # optional full-text (future)
+    content: str | None = None  # extracted full article text (Phase 9)
+    long_summary: str | None = None  # LLM-written summary of `content` (Phase 9)
+    # How the displayed summary was produced: "llm", "exempt", or "rss:<reason>".
+    # Kept because the fallbacks are silent by design — this is the only way to
+    # see that a source has quietly stopped being fetchable.
+    summary_source: str = "rss"
     embedding: list[float] | None = None  # left unset: see nodes/score.py
     score: float | None = None  # best weighted area similarity (Phase 3)
     matched_area: str | None = None  # interest area that produced `score` (Phase 3)

@@ -27,8 +27,19 @@ logger = logging.getLogger(__name__)
 # digests/ lives at the repo root: src/esp_news/nodes/digest.py -> parents[3].
 DEFAULT_DIGEST_DIR = Path(__file__).resolve().parents[3] / "digests"
 
-# Feed summaries run long; this keeps an entry skimmable in the markdown.
-_MAX_SUMMARY_CHARS = 400
+# Phase 9 summaries are written to a target length already, so this is a guard
+# against a runaway model or an untouched feed blurb, not a normal trim.
+_MAX_SUMMARY_CHARS = 1200
+
+
+def display_summary(article: Article) -> str:
+    """The summary a reader should actually see.
+
+    The LLM one when Phase 9 produced it, the RSS one otherwise. Everything
+    that renders an article goes through here, so a fetch failure degrades to
+    the old behaviour instead of showing a blank card.
+    """
+    return (article.long_summary or article.summary or "").strip()
 
 
 def _runner_up(article: Article) -> tuple[str, float] | None:
@@ -119,9 +130,13 @@ def render_digest(
                 why += f" · runner-up: {runner[0]} ({runner[1]:.3f})"
             if art.published:
                 why += f" · {art.published.date().isoformat()}"
+            # Only worth saying when it *isn't* the LLM summary — that's the
+            # case where the page is worth a look.
+            if art.summary_source and art.summary_source != "llm":
+                why += f" · summary: {art.summary_source}"
             lines += [why, ""]
 
-            summary = trim_text(art.summary)
+            summary = trim_text(display_summary(art))
             if summary:
                 lines += [summary, ""]
 
@@ -136,10 +151,12 @@ def render_digest(
 
 
 # Defaults chosen to match the firmware's buffers in news_client.h
-# (NEWS_MAX_ARTICLES 12, NEWS_SUMMARY_LEN 420) so the device never has to
-# discard payload it already spent memory parsing.
+# (NEWS_MAX_ARTICLES 12, NEWS_SUMMARY_LEN 960) so the device never has to
+# discard payload it already spent memory parsing. Raised from 400 in Phase 9:
+# an LLM summary trimmed to 400 chars is a teaser again, which is the whole
+# thing this phase set out to stop.
 DEFAULT_JSON_LIMIT = 12
-DEFAULT_JSON_SUMMARY_CHARS = 400
+DEFAULT_JSON_SUMMARY_CHARS = 900
 
 
 def digest_payload(
@@ -160,7 +177,7 @@ def digest_payload(
         "articles": [
             {
                 "title": a.title,
-                "summary": trim_text(a.summary, max_summary),
+                "summary": trim_text(display_summary(a), max_summary),
                 "source": a.source,
                 "matched_area": a.matched_area or "",
                 "score": round(a.score or 0.0, 4),

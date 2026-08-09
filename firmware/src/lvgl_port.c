@@ -306,6 +306,45 @@ int lvgl_port_get_rotation(void)
   return s_rotation;
 }
 
+/* The rotation change itself, with no locking of its own. Split out because
+ * the two callers stand in opposite relationships to the LVGL lock, and
+ * getting that wrong hangs the display task rather than misdrawing anything:
+ * `lvgl_mux` is a plain xSemaphoreCreateMutex(), which is NOT recursive, so a
+ * caller that already holds it (anything running inside lv_timer_handler,
+ * which is where the IMU poll lives) must not take it again. */
+static void apply_rotation(int deg)
+{
+  const bool was_landscape = (s_rotation == DISP_ROT_90 || s_rotation == DISP_ROT_270);
+  const bool landscape     = (deg == DISP_ROT_90 || deg == DISP_ROT_270);
+
+  s_rotation = deg;
+
+  if (landscape != was_landscape) {
+    /* Logical resolution actually changed: portrait 172x640 <-> landscape
+     * 640x172. lv_disp_drv_update() resizes the screens and marks every layout
+     * dirty, but it cannot re-lay-out a UI whose positions were computed for
+     * the other aspect — so the widget tree is rebuilt rather than resized. */
+    s_disp_drv_p->hor_res = landscape ? LCD_NOROT_VRES : LCD_NOROT_HRES;  /* 640 : 172 */
+    s_disp_drv_p->ver_res = landscape ? LCD_NOROT_HRES : LCD_NOROT_VRES;  /* 172 : 640 */
+    lv_disp_drv_update(s_disp, s_disp_drv_p);
+    news_ui_relayout();
+    return;
+  }
+
+  /* 0 <-> 180 (or 90 <-> 270): same logical resolution, so nothing about the
+   * widget tree changes — only the transform flush_cb applies on the way to
+   * the panel. Invalidating the active screen is enough, and is deliberately
+   * used in place of lv_disp_drv_update(): that would walk the whole tree
+   * marking layouts dirty and re-fire SIZE_CHANGED for a size that did not
+   * change, which is exactly the kind of unnecessary state churn that has
+   * broken the deck's scroll and selection state before.
+   *
+   * The invalidate is not optional. With full_refresh the panel is only
+   * written when something is dirty, so a flip on a static screen would
+   * otherwise not appear until the next digest poll redrew something. */
+  lv_obj_invalidate(lv_scr_act());
+}
+
 void lvgl_port_set_rotation(int deg)
 {
   if (deg != DISP_ROT_0 && deg != DISP_ROT_90 &&
@@ -315,16 +354,17 @@ void lvgl_port_set_rotation(int deg)
   if (!s_disp_drv_p) return;
 
   if (!example_lvgl_lock(-1)) return;
-
-  s_rotation = deg;
-  bool landscape = (deg == DISP_ROT_90 || deg == DISP_ROT_270);
-  s_disp_drv_p->hor_res = landscape ? LCD_NOROT_VRES : LCD_NOROT_HRES;  /* 640 : 172 */
-  s_disp_drv_p->ver_res = landscape ? LCD_NOROT_HRES : LCD_NOROT_VRES;  /* 172 : 640 */
-  lv_disp_drv_update(s_disp, s_disp_drv_p);
-
-  /* No UI rebuild hook here — the news UI is portrait-only (see file header).
-   * Nothing in this project calls this function; it is kept so the driver
-   * stays a verbatim copy of the Waveshare original. */
-
+  apply_rotation(deg);
   example_lvgl_unlock();
+}
+
+void lvgl_port_set_rotation_locked(int deg)
+{
+  if (deg != DISP_ROT_0 && deg != DISP_ROT_90 &&
+      deg != DISP_ROT_180 && deg != DISP_ROT_270)
+    return;
+  if (deg == s_rotation) return;
+  if (!s_disp_drv_p) return;
+
+  apply_rotation(deg);
 }

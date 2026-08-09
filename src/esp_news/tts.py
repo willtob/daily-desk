@@ -49,9 +49,17 @@ PCM_SAMPLE_RATE = 16000
 PCM_BITS = 16
 PCM_CHANNELS = 1
 
-# Long summaries make for long waits and long API calls; the device only ever
-# shows a trimmed summary anyway.
-MAX_SPEECH_CHARS = 800
+# Has to clear the Phase 9 summary target (800) plus the title and source line,
+# or narration would stop mid-sentence on exactly the articles worth hearing.
+# Still a ceiling, so a runaway summary can't bill a five-minute synthesis.
+MAX_SPEECH_CHARS = 1200
+
+# The speech endpoint occasionally accepts a request, returns 200, and then
+# takes twelve minutes to deliver the body — measured, on a perfectly ordinary
+# 1049-character summary. The SDK's default timeout is ten minutes, so without
+# this one stall pins a server worker for the whole of it while the device gave
+# up after 15 s. Fail fast instead; the device's retry is what recovers.
+SYNTHESIS_TIMEOUT_SECONDS = 90.0
 
 
 def resample_pcm(raw: bytes, src_rate: int, dst_rate: int) -> bytes:
@@ -99,7 +107,12 @@ class TTSClient:
                 raise MissingAPIKeyError(
                     "OPENAI_API_KEY is not set — add it to .env (see .env.example)."
                 )
-            self._client = OpenAI()
+            # One retry, not the SDK's default of two: a stalled synthesis that
+            # has already burned 90 s should not get 180 more before the caller
+            # hears about it.
+            self._client = OpenAI(
+                timeout=SYNTHESIS_TIMEOUT_SECONDS, max_retries=1
+            )
         return self._client
 
     def cache_path(self, text: str) -> Path | None:
