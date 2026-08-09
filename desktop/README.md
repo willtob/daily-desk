@@ -77,7 +77,25 @@ defaults write com.willtobin.esp-news-widget baseURL http://127.0.0.1:8010
 | Right-click header | refresh, reload, placement, open at login, quit |
 | `⌘D` | desktop ⇄ floating |
 | `⌘Q` | quit |
+| Two-finger swipe ⇠⇢ | next / previous story, on the deck or with one open |
 | Drag anywhere | move the widget |
+
+A two-finger swipe is not a gesture in AppKit's sense — it is a stream of
+`scrollWheel` events with precise deltas and a phase, which SwiftUI on macOS 14
+cannot see. `TrackpadPager` reads them through a local event monitor, which
+also keeps it out of a fight with the article's `NSScrollView`: it takes only
+horizontal movement, and only when that beats the vertical by 1.6×, so reading
+a long story never pages the deck. One flick produces dozens of events plus a
+momentum tail, so it fires once and latches until the gesture ends — summing
+deltas naively pages ten stories per swipe. Direction is normalised against
+`isDirectionInvertedFromDevice`, so swipe-left is the next story whichever way
+natural scrolling is set.
+
+Run with `ESP_NEWS_TRACE_SCROLL=1` to log what the monitor receives. That
+exists because the interesting question is not the arithmetic but whether a
+panel at the *desktop* window level is sent scroll events at all — and if it
+is not, the symptom is simply nothing happening, which looks identical to a
+threshold being wrong.
 
 The keys only reach a window that can take focus, which in desktop placement
 it never does — that is why the deck is driven by on-screen buttons and the

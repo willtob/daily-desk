@@ -16,6 +16,7 @@ struct RootView: View {
     @ObservedObject var store: DigestStore
     @ObservedObject var controller: PanelController
     @StateObject private var audio = AudioPlayer()
+    @StateObject private var pager = TrackpadPager()
 
     /// Monotonic deck position — see DeckView. Not an index into `articles`.
     @State private var position = 0
@@ -83,6 +84,15 @@ struct RootView: View {
                 .onEnded   { _ in controller.dragEnded() }
         )
         .task { store.startPolling() }
+        // Two fingers sideways flips the deck, and walks stories when one is
+        // open — the same thing the arrow keys and the nav buttons do, so
+        // there is one idea of what "next" means rather than three.
+        .onAppear {
+            pager.trace = ProcessInfo.processInfo.environment["ESP_NEWS_TRACE_SCROLL"] != nil
+            pager.onPage = { step($0) }
+            pager.start()
+        }
+        .onDisappear { pager.stop() }
         .onKeyPress(.escape) {
             guard openIndex != nil else { return .ignored }
             close()
