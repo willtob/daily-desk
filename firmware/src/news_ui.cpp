@@ -61,12 +61,22 @@
  * the excerpt read as disabled text, which is partly the 16-bit colour depth
  * quantising the blend and partly Montserrat having no weight to fall back
  * on. Bumped until the excerpt reads as secondary rather than as greyed out. */
-#define INK_SOFT      175   /* 0.69 — summary excerpt on a card  */
+#define INK_SOFT      214   /* 0.84 — summary excerpt on a card  */
 #define INK_SOURCE    180   /* 0.71 — provenance                 */
-#define INK_BODY      209   /* 0.82 — summary prose in detail    */
+#define INK_BODY      255   /* 1.00 — summary prose in detail    */
 #define INK_BAR_TRACK  41   /* 0.16 — the score bar's groove     */
 #define INK_BAR_FILL  140   /* 0.55 — the score bar itself       */
-#define INK_HAIRLINE   46   /* 0.18 — the rule in detail         */
+#define INK_HAIRLINE   64   /* 0.25 — the rule in detail         */
+
+/* The body was 0.82 and the card excerpt 0.69, and both were too light to
+ * read here. The reasoning behind the earlier numbers still holds — they came
+ * from the Mac widget, where the same values look right — but three things
+ * stack up against them on this panel and not on a Retina display: 16-bit
+ * colour quantises the blend, Montserrat has no bold to fall back on so weight
+ * has to come from ink alone, and a 172 px column viewed end-on is a harder
+ * read than a wide one. The prose is the content; it now gets full-strength
+ * ink and hierarchy comes from size and spacing instead. Only genuinely
+ * secondary things — the source line, the score groove — stay knocked back. */
 
 /* ── Type scale ───────────────────────────────────────────────────────
  *
@@ -93,7 +103,7 @@
 
 #define META_TRACKING     1   /* letter-space for uppercase labels */
 #define TITLE_LEADING     1   /* headlines run long; default is airy */
-#define BODY_LEADING      4   /* prose wants the opposite */
+#define BODY_LEADING      6   /* prose wants the opposite */
 #define CARD_BODY_LEADING 2   /* the card excerpt is tighter than the detail */
 
 /* ── Layout ───────────────────────────────────────────────────────── */
@@ -257,6 +267,76 @@ static lv_coord_t score_bar_w(float score, lv_coord_t full)
     if (t > 1.0f) t = 1.0f;
     lv_coord_t w = (lv_coord_t)(t * full);
     return w < 3 ? 3 : w;   /* always a sliver, so low reads as low not missing */
+}
+
+/* ── Paragraphing the summary ─────────────────────────────────────────
+ *
+ * The backend writes one ~800-character block with no line breaks in it. At
+ * 14 pt in a 140 px column that is forty-odd unbroken lines, and on a screen
+ * this narrow and this tall it reads as a wall: there is no way to find your
+ * place again after looking away. The breaks are inserted here, at display
+ * time, so news_articles keeps exactly what the backend sent.
+ *
+ * The rule is deliberately conservative, because a missed break costs nothing
+ * and a break in the middle of a name is glaring. Split only on a stop that is
+ * followed by a space and a capital; only once MIN_PARA characters have gone
+ * by, so a run of short sentences does not shatter into fragments; and never
+ * after a single capital letter, which is what "U.S. Steel" and "J. Doe" look
+ * like to a sentence splitter. Closing quotes are stepped over, including the
+ * multi-byte curly ones these summaries actually use, and a decimal point
+ * ("8.000 hectáreas") never splits because no space follows it.
+ *
+ * Characters rather than sentences are what pace this. The digest runs to
+ * 200-character sentences in Spanish and 60 in English, so a sentence-counting
+ * rule gives one unbroken slab in the first language and confetti in the
+ * second. */
+#define MIN_PARA  170
+
+static bool sentence_break(const char *p, const char *start, int *adv)
+{
+    const char *q;
+
+    if (*p != '.' && *p != '!' && *p != '?') return false;
+
+    q = p + 1;
+    if (*q == '"' || *q == '\'') q++;
+    else if ((unsigned char)q[0] == 0xE2 && (unsigned char)q[1] == 0x80 &&
+             ((unsigned char)q[2] == 0x9D || (unsigned char)q[2] == 0x99)) q += 3;
+
+    if (*q != ' ') return false;
+
+    /* Next word has to look like the start of a sentence. Non-ASCII passes:
+     * an accented capital opening a Spanish headline is still a sentence. */
+    unsigned char n = (unsigned char)q[1];
+    if (n < 0x80 && !(n >= 'A' && n <= 'Z')) return false;
+
+    /* An initial, not a full stop. */
+    if (*p == '.' && p > start && p[-1] >= 'A' && p[-1] <= 'Z' &&
+        (p - 1 == start || p[-2] == ' ' || p[-2] == '.')) return false;
+
+    *adv = (int)(q - p);
+    return true;
+}
+
+static void paragraphize(const char *src, char *dst, size_t cap)
+{
+    size_t o = 0, run = 0;
+    int    adv = 0;
+
+    for (size_t i = 0; src[i] && o + 4 < cap; i++) {
+        dst[o++] = src[i];
+        run++;
+
+        if (run < MIN_PARA) continue;
+        if (!sentence_break(&src[i], src, &adv)) continue;
+
+        for (int k = 1; k < adv && o + 4 < cap; k++) { dst[o++] = src[i + k]; }
+        i += adv;                 /* land on the space; the loop step eats it */
+        dst[o++] = '\n';
+        dst[o++] = '\n';
+        run = 0;
+    }
+    dst[o] = '\0';
 }
 
 /* Positive modulo. C's % keeps the sign of the dividend, so a plain p % n
@@ -488,20 +568,23 @@ static void step_deck(int delta)
 
 /* ── Slide transition between whole views ─────────────────────────────
  *
- * Detail slides in over whatever opened it and back out the same way, which
- * makes the swipe feel like it's moving a sheet of paper rather than cutting
- * to a new screen. The view underneath stays visible for the duration —
- * cont_detail is opaque, so nothing shows through. */
+ * The list rides up over the deck and back down the same way, which makes the
+ * swipe feel like it's moving a sheet of paper rather than cutting to a new
+ * screen. The view underneath stays visible for the duration — the shells are
+ * opaque, so nothing shows through.
+ *
+ * Opening a story does *not* use this; see the expand block below. The
+ * horizontal slide survives only for paging from one story to the next. */
 #define SLIDE_MS  180
-
-static void anim_x_cb(void *obj, int32_t v)
-{
-    lv_obj_set_x((lv_obj_t *)obj, (lv_coord_t)v);
-}
 
 static void anim_y_cb(void *obj, int32_t v)
 {
     lv_obj_set_y((lv_obj_t *)obj, (lv_coord_t)v);
+}
+
+static void anim_translate_cb(void *obj, int32_t v)
+{
+    lv_obj_set_style_translate_x((lv_obj_t *)obj, (lv_coord_t)v, LV_STATE_DEFAULT);
 }
 
 static void anim_hide_ready_cb(lv_anim_t *a)
@@ -525,30 +608,311 @@ static void slide(lv_obj_t *obj, lv_anim_exec_xcb_t cb,
     lv_anim_start(&a);
 }
 
+/* ── Expand: the card becomes the article ─────────────────────────────
+ *
+ * cont_detail is a full-screen container whose children sit at absolute
+ * positions, and LVGL clips children to their parent's rectangle. So the whole
+ * transition is one rectangle: start cont_detail at the tapped card's exact
+ * on-screen coordinates, at the card's own corner radius and in the card's own
+ * tint, and grow it to fill the panel. The story is already laid out inside;
+ * what you see is the card's own top edge staying put while the article
+ * unrolls out of it. The card underneath never has to be hidden, because for
+ * the first frame the two are pixel-identical.
+ *
+ * This replaces sliding an opaque full-screen sheet in from the right, which
+ * read as arriving at a different screen rather than opening the thing you
+ * touched — on a panel 172 px wide, losing that thread costs more than it does
+ * on a phone.
+ *
+ * It is affordable because it needs neither a transform nor an opacity layer:
+ * position, size and radius only. LVGL 8 would render either of those to an
+ * intermediate buffer first (see the note on the deck above), and full_refresh
+ * means every frame is already a whole-panel blit — there is no headroom to
+ * spend on a second one.
+ *
+ * The lateral slide survives for detail → detail, because paging to the next
+ * story *is* a sideways move: there is no card on screen for it to grow from.
+ *
+ * ── Why this is 400 ms on an easing nobody else uses ──────────────────
+ *
+ * Measured on the board, not guessed at. The panel delivers an animation frame
+ * every ~40 ms during the expansion (and every ~70 ms during a deck flip — the
+ * flip is the *slower* of the two, because fading cards drops their opacity
+ * below 255 and LVGL renders those through a layer). That is the ceiling:
+ * LV_DISP_DEF_REFR_PERIOD is already 30 ms and lowering it changes nothing,
+ * because the limit is render + a 220 KB full-panel blit, not the timer.
+ *
+ * So the only variable that matters is **how far the rectangle moves per
+ * frame**, which is duration and easing, not cost. At 240 ms this got 6 frames,
+ * and lv_anim_path_ease_out puts 38% of the whole distance into the first one
+ * — a 364 px growth arriving as a 138 px jump, then a crawl. That is what
+ * "glitchy" was. The same easing is fine on the deck flip only because the
+ * card moves 74 px in total, so 38% of it is nothing.
+ *
+ * 400 ms buys ~10 frames, and path_expand() spreads them almost evenly with a
+ * soft landing: worst frame 11% of the distance instead of 38%. */
+#define EXPAND_MS    400
+/* Closing is deliberately faster than opening. Opening is the moment worth
+ * dwelling on; leaving is not, and cont_detail keeps its clickable children
+ * (detail_body has to stay hittable or the article stops scrolling) for the
+ * whole collapse, so every millisecond of it is a millisecond in which a tap
+ * on the deck behind lands on a view that is on its way out. */
+#define COLLAPSE_MS  260
+
+/* Nearly linear, decelerating gently into place. LVGL's stock paths are built
+ * for 60 fps, where a front-loaded curve reads as responsiveness; at 25 fps it
+ * reads as a dropped frame. Control values are the same 0..1024 scale
+ * lv_anim_path_ease_out uses. */
+static int32_t path_expand(const lv_anim_t *a)
+{
+    uint32_t t    = lv_map(a->act_time, 0, a->time, 0, LV_BEZIER_VAL_MAX);
+    int32_t  step = lv_bezier3(t, 0, 300, 800, LV_BEZIER_VAL_MAX);
+    return a->start_value +
+           (((int32_t)step * (a->end_value - a->start_value)) >> LV_BEZIER_VAL_SHIFT);
+}
+
+/* The card this story grew out of. Its coordinates are read fresh at collapse
+ * time rather than stored, so a list that has been scrolled since still
+ * shrinks back to the right place. */
+static lv_obj_t *detail_origin = NULL;
+
+/* ── One rule: the detail view never teleports ────────────────────────
+ *
+ * det_cur is where cont_detail actually is, maintained here rather than read
+ * back with lv_obj_get_coords(). Two reasons, and the second one is the bug
+ * this whole section exists to kill.
+ *
+ * The mundane reason: lv_obj_set_pos() does not update an object's coordinates
+ * immediately, it marks the layout dirty and lets the next refresh resolve it.
+ * Setting a rect and reading it back in the same call gives the *old* one.
+ *
+ * The real reason: every animation must start from wherever the view currently
+ * is, never from a fixed start value. lv_anim_start() applies start_value
+ * immediately (early_apply is on by default in lv_anim_init), so an animation
+ * expressed as "0 -> 256 of the journey from the card to full screen" snaps the
+ * view to the card the instant it starts — and one expressed as "256 -> 0"
+ * snaps it to *full screen*. Restart either one while the other is in flight
+ * and you get a single frame of the destination before the animation plays,
+ * which is exactly the "it jumps to the article, then reverts to do the
+ * animation" flicker. On the light default theme (LV_THEME_DEFAULT_DARK 0) a
+ * pale story tint flashing full-screen reads as white.
+ *
+ * So: interpolate between two *areas*, capture `from` at the moment of
+ * starting, and there is no start value left to teleport to. */
+static lv_area_t  det_cur;
+static lv_coord_t det_rad_cur;
+static lv_area_t  det_from, det_to;
+static lv_coord_t det_rad_from, det_rad_to;
+
+static void area_set(lv_area_t *a, lv_coord_t x, lv_coord_t y,
+                     lv_coord_t w, lv_coord_t h)
+{
+    a->x1 = x; a->y1 = y; a->x2 = x + w - 1; a->y2 = y + h - 1;
+}
+
+static void detail_full_area(lv_area_t *a)
+{
+    area_set(a, 0, 0, EXAMPLE_LCD_H_RES, EXAMPLE_LCD_V_RES);
+}
+
+/* The single place cont_detail's geometry changes. cont_detail's parent is the
+ * screen at (0,0), so absolute and parent-relative coordinates are the same
+ * here; that is what lets an origin captured with lv_obj_get_coords() be
+ * handed straight to lv_obj_set_pos(). */
+static void detail_set_rect(const lv_area_t *a, lv_coord_t radius)
+{
+    det_cur     = *a;
+    det_rad_cur = radius;
+    lv_obj_set_pos(cont_detail, a->x1, a->y1);
+    lv_obj_set_size(cont_detail, lv_area_get_width(a), lv_area_get_height(a));
+    lv_obj_set_style_radius(cont_detail, radius, LV_STATE_DEFAULT);
+}
+
+static bool detail_is_full(void)
+{
+    return det_cur.x1 == 0 && det_cur.y1 == 0 &&
+           lv_area_get_width(&det_cur)  == EXAMPLE_LCD_H_RES &&
+           lv_area_get_height(&det_cur) == EXAMPLE_LCD_V_RES;
+}
+
+static void rect_cb(void *obj, int32_t t)
+{
+    (void)obj;
+    lv_area_t a;
+    area_set(&a,
+             lerp(det_from.x1, det_to.x1, t),
+             lerp(det_from.y1, det_to.y1, t),
+             lerp(lv_area_get_width(&det_from),  lv_area_get_width(&det_to),  t),
+             lerp(lv_area_get_height(&det_from), lv_area_get_height(&det_to), t));
+    detail_set_rect(&a, lerp(det_rad_from, det_rad_to, t));
+}
+
+/* Where a story should grow from, or shrink back into. False means there is no
+ * sensible rect — the origin card was hidden by a shorter refresh, or the
+ * story was reached by paging rather than by a tap. */
+static bool origin_rect(lv_obj_t *origin, lv_area_t *out)
+{
+    if (!origin) return false;
+    if (lv_obj_has_flag(origin, LV_OBJ_FLAG_HIDDEN)) return false;
+    lv_obj_get_coords(origin, out);
+    return lv_area_get_width(out) > 0 && lv_area_get_height(out) > 0;
+}
+
+/* Put the detail view away *now* — no animation, no callback.
+ *
+ * Every path that leaves a story ends here, including the animated one. The
+ * hide must never be reachable only from an lv_anim ready callback: a deleted
+ * or interrupted animation does not fire one, and cont_detail is a
+ * full-screen clickable object sitting on top of everything else. A hide that
+ * gets skipped therefore does not look like a missed animation, it looks like
+ * the entire UI has stopped responding to taps. */
+static void detail_park(void)
+{
+    lv_area_t full;
+    lv_anim_del(cont_detail, rect_cb);
+    lv_obj_add_flag(cont_detail, LV_OBJ_FLAG_HIDDEN);
+    detail_full_area(&full);
+    detail_set_rect(&full, 0);
+    /* A paging slide cut short by a close would otherwise leave the prose
+     * offset, and the next story would open already shoved sideways. */
+    lv_anim_del(detail_body, anim_translate_cb);
+    lv_obj_set_style_translate_x(detail_body, 0, LV_STATE_DEFAULT);
+    detail_origin = NULL;
+}
+
+static void collapse_ready_cb(lv_anim_t *a)
+{
+    (void)a;
+    detail_park();
+}
+
+static void expand_ready_cb(lv_anim_t *a)
+{
+    lv_area_t full;
+    (void)a;
+    detail_full_area(&full);
+    detail_set_rect(&full, 0);   /* land exactly, whatever the lerp rounded to */
+}
+
+/* Animate from wherever the view is now to `to`. */
+static void detail_move_to(const lv_area_t *to, lv_coord_t radius,
+                           uint32_t base_ms, lv_anim_ready_cb_t ready)
+{
+    lv_anim_del(cont_detail, rect_cb);
+
+    det_from     = det_cur;
+    det_rad_from = det_rad_cur;
+    det_to       = *to;
+    det_rad_to   = radius;
+
+    /* Scale the time to the distance actually left to travel. A transition
+     * interrupted near the end has 30 px to go and must not spend the full
+     * EXPAND_MS crawling through it. */
+    lv_coord_t span = lv_area_get_height(&det_to) - lv_area_get_height(&det_from);
+    if (span < 0) span = -span;
+    uint32_t ms = base_ms * span / (EXAMPLE_LCD_V_RES - CARD_H);
+    if (ms < 90)      ms = 90;
+    if (ms > base_ms) ms = base_ms;
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, cont_detail);
+    lv_anim_set_exec_cb(&a, rect_cb);
+    lv_anim_set_values(&a, 0, 256);      /* 0 == det_from == where it is now */
+    lv_anim_set_time(&a, ms);
+    lv_anim_set_path_cb(&a, path_expand);
+    lv_anim_set_ready_cb(&a, ready);
+    lv_anim_start(&a);
+}
+
+/* Shrink the story back into the card it came from, if that card is still
+ * there to shrink into. */
+static void detail_dismiss(void)
+{
+    lv_area_t back;
+
+    if (lv_obj_has_flag(cont_detail, LV_OBJ_FLAG_HIDDEN)) return;
+
+    /* Stop taking touches the moment it starts leaving. It is still a
+     * full-screen object for the length of the collapse, and leaving it
+     * clickable means every tap during that time lands on a view that is on
+     * its way out instead of on the deck appearing behind it. */
+    lv_obj_clear_flag(cont_detail, LV_OBJ_FLAG_CLICKABLE);
+
+    if (!origin_rect(detail_origin, &back)) { detail_park(); return; }
+
+    detail_move_to(&back, CARD_RADIUS, COLLAPSE_MS, collapse_ready_cb);
+}
+
+/* ── Paging inside an open story ──────────────────────────────────────
+ *
+ * Swiping to the next story used to slide cont_detail itself: park it off the
+ * right edge, then bring it back. That exposes whatever is behind it for the
+ * frame before it returns — the deck flashing through a story that has not
+ * gone anywhere. Translating the prose instead keeps the full-screen tint
+ * stationary and opaque, so the new text arrives over the story's own colour
+ * and nothing behind is ever uncovered.
+ *
+ * translate_x is a draw-time offset, not a transform, so unlike transform_zoom
+ * it needs no intermediate layer — which is the only reason it is affordable
+ * here (see the note on the deck). */
+#define PAGE_SHIFT  44
+#define PAGE_MS    200
+
+static void page_body_in(void)
+{
+    lv_anim_del(detail_body, anim_translate_cb);
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, detail_body);
+    lv_anim_set_exec_cb(&a, anim_translate_cb);
+    lv_anim_set_values(&a, PAGE_SHIFT, 0);
+    lv_anim_set_time(&a, PAGE_MS);
+    lv_anim_set_path_cb(&a, path_expand);
+    lv_anim_start(&a);
+}
+
 /* ── View switching ───────────────────────────────────────────────── */
 static void show_deck(void)
 {
     view = VIEW_DECK;
     lv_obj_clear_flag(cont_deck, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_pos(cont_deck, 0, 0);
-    /* The list rides back down the way it came up. */
-    lv_obj_set_x(cont_list, 0);
-    slide(cont_list, anim_y_cb, 0, EXAMPLE_LCD_V_RES, true);
-    slide(cont_detail, anim_x_cb, lv_obj_get_x(cont_detail),
-          EXAMPLE_LCD_H_RES, true);
+
+    /* Ride the list back down only if it is actually up there. Returning from
+     * a story that was opened on the deck it is already parked, and animating
+     * it anyway would drag a full-screen opaque panel down across the very
+     * deck the story is shrinking into. */
+    if (!lv_obj_has_flag(cont_list, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_set_x(cont_list, 0);
+        slide(cont_list, anim_y_cb, lv_obj_get_y(cont_list),
+              EXAMPLE_LCD_V_RES, true);
+    }
+    detail_dismiss();
 }
 
 static void show_list(void)
 {
     view = VIEW_LIST;
+
+    /* Same reasoning in reverse: coming back from a story that was opened *in*
+     * the list must not replay the list's own entrance underneath it. Animate
+     * from wherever the list currently is, and skip it entirely when it is
+     * already at rest in place. */
+    bool in_place = !lv_obj_has_flag(cont_list, LV_OBJ_FLAG_HIDDEN) &&
+                    lv_obj_get_y(cont_list) == 0 &&
+                    lv_anim_get(cont_list, anim_y_cb) == NULL;
+
     lv_obj_clear_flag(cont_list, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_x(cont_list, 0);
-    slide(cont_list, anim_y_cb, EXAMPLE_LCD_V_RES, 0, false);
-    slide(cont_detail, anim_x_cb, lv_obj_get_x(cont_detail),
-          EXAMPLE_LCD_H_RES, true);
+    if (!in_place) slide(cont_list, anim_y_cb, lv_obj_get_y(cont_list), 0, false);
+
+    detail_dismiss();
 }
 
-static void show_detail(int idx)
+/* origin is the card that was tapped, and NULL when there wasn't one. */
+static void show_detail(int idx, lv_obj_t *origin)
 {
     if (idx < 0 || idx >= news_count) return;
     selected    = idx;
@@ -559,12 +923,9 @@ static void show_detail(int idx)
     const area_style_t   *s = area_style(a->area);
     lv_color_t            c = lv_color_hex(s->color);
 
-    /* Same colour as the card it came from, edge to edge. That is the whole
-     * continuity trick: the card grows into the story rather than being
-     * replaced by a screen, so on a panel this narrow you never lose track of
-     * where you were. */
+    /* Same colour as the card it came from, edge to edge — the first frame of
+     * the expansion has to be indistinguishable from the card itself. */
     lv_obj_set_style_bg_color(cont_detail, c, LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(d_topbar, c, LV_STATE_DEFAULT);
 
     lv_label_set_text(lbl_d_badge, s->label);
     lv_obj_set_style_text_color(lbl_d_badge, c, LV_STATE_DEFAULT);
@@ -580,15 +941,50 @@ static void show_detail(int idx)
 
     /* The empty case is real: a fetch failure leaves the RSS summary, and some
      * feeds ship nothing worth showing. */
-    lv_label_set_text(lbl_d_summary,
-                      a->summary[0] ? a->summary : "(no summary in the feed)");
+    if (a->summary[0]) {
+        static char body[NEWS_SUMMARY_LEN + 64];
+        paragraphize(a->summary, body, sizeof(body));
+        lv_label_set_text(lbl_d_summary, body);
+    } else {
+        lv_label_set_text(lbl_d_summary, "(no summary in the feed)");
+    }
 
     /* Always open a story at the top, regardless of where the last one was
      * left. */
     lv_obj_scroll_to_y(detail_body, 0, LV_ANIM_OFF);
 
+    bool      was_open = !lv_obj_has_flag(cont_detail, LV_OBJ_FLAG_HIDDEN);
+    lv_area_t start, full;
+
+    detail_full_area(&full);
     lv_obj_clear_flag(cont_detail, LV_OBJ_FLAG_HIDDEN);
-    slide(cont_detail, anim_x_cb, EXAMPLE_LCD_H_RES, 0, false);
+    lv_obj_add_flag(cont_detail, LV_OBJ_FLAG_CLICKABLE);
+
+    if (was_open) {
+        /* Already on screen. Two cases, and neither may reset the geometry:
+         * settled at full screen this is paging, which slides the prose only
+         * (see page_body_in) so nothing ever uncovers the view behind; caught
+         * mid-collapse, the right answer is to finish opening from wherever
+         * the shrink got to. detail_origin is deliberately left alone — swiping
+         * back out should land on the card the reader actually came from, not
+         * on whichever story they paged to. */
+        if (detail_is_full()) page_body_in();
+        else                  detail_move_to(&full, 0, EXPAND_MS, expand_ready_cb);
+        return;
+    }
+
+    detail_origin = origin;
+
+    if (!origin_rect(origin, &start)) {
+        /* No card to grow out of. Grow from a card-sized rect in the middle
+         * rather than snapping to full screen — this path is rare, but a snap
+         * here is the same one-frame flash the whole design avoids. */
+        area_set(&start, PAD, (EXAMPLE_LCD_V_RES - CARD_H) / 2, BODY_W, CARD_H);
+        detail_origin = NULL;
+    }
+
+    detail_set_rect(&start, CARD_RADIUS);
+    detail_move_to(&full, 0, EXPAND_MS, expand_ready_cb);
 }
 
 static void close_detail(void)
@@ -614,14 +1010,15 @@ static void cb_card(lv_event_t *e)
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
     /* LVGL suppresses CLICKED when the press turned into a scroll, so tapping
      * and dragging on the same card do the right thing without extra work. */
-    int idx = card_index_of(lv_event_get_target(e));
-    if (idx >= 0) show_detail(idx);
+    lv_obj_t *obj = lv_event_get_target(e);
+    int       idx = card_index_of(obj);
+    if (idx >= 0) show_detail(idx, obj);   /* the story grows out of this card */
 }
 
 static void cb_face(lv_event_t *e)
 {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
-    show_detail(deck_index(deck_pos));
+    show_detail(deck_index(deck_pos), lv_event_get_target(e));
 }
 
 static void cb_prev(lv_event_t *e)
@@ -687,7 +1084,7 @@ static void cb_gesture(lv_event_t *e)
             } else if (dir == LV_DIR_LEFT) {             /* next story */
                 if (selected + 1 < news_count) {
                     if (news_audio_playing) news_audio_stop();
-                    show_detail(selected + 1);
+                    show_detail(selected + 1, NULL);
                 }
             }
             break;
@@ -806,6 +1203,49 @@ static void strip_chrome(lv_obj_t *o)
     lv_obj_set_style_bg_opa(o, LV_OPA_TRANSP, LV_STATE_DEFAULT);
     lv_obj_set_style_pad_all(o, 0, LV_STATE_DEFAULT);
     lv_obj_set_style_radius(o, 0, LV_STATE_DEFAULT);
+}
+
+/* ── No hover on a touchscreen ────────────────────────────────────────
+ *
+ * LVGL's default theme gives every button a pressed style (a darkening colour
+ * filter) plus two style *transitions*: transition_delayed on the way in and
+ * transition_normal on the way out. That pair is built for a mouse, where a
+ * control lights up as the cursor arrives and fades back as it leaves. A
+ * finger has no hover — it is down or it is not — so the delay and the fade
+ * only leave a highlight sitting on a control after the touch that caused it
+ * is over, which reads as a state the UI got stuck in.
+ *
+ * Two ways of switching that off do not work, both found the hard way:
+ *
+ *   lv_obj_set_style_transition(o, NULL, sel) looks like the API for "no
+ *   transition" and is a null dereference. lv_obj_set_state() reads the
+ *   property and walks tr->props with no NULL check, so the object crashes on
+ *   its first state change — i.e. the first time the button is pressed.
+ *
+ *   Overriding it with an empty descriptor does not help either: the same
+ *   function collects transitions from *every* style on the object and keeps
+ *   the one whose selector has the highest state, so the theme's PRESSED
+ *   entry outranks anything set at the default state.
+ *
+ * Taking the theme's styles off the object is what actually works. Feedback
+ * itself is still worth keeping, and more here than on a fast display — at
+ * ~37 ms a frame, a tap with no acknowledgement feels ignored — so the pressed
+ * *colour* stays and only the filter and its timing go, which makes the
+ * response instant rather than animated. Tiles get nothing at all: tapping one
+ * begins the expansion, and that is the acknowledgement. */
+static lv_obj_t *make_button(lv_obj_t *parent, lv_coord_t w, lv_coord_t h,
+                             lv_color_t bg, lv_color_t bg_pressed,
+                             lv_event_cb_t cb)
+{
+    lv_obj_t *b = lv_btn_create(parent);
+    lv_obj_remove_style_all(b);
+    lv_obj_set_size(b, w, h);
+    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(b, bg, LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(b, bg_pressed, LV_STATE_PRESSED);
+    lv_obj_clear_flag(b, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(b, cb, LV_EVENT_CLICKED, NULL);
+    return b;
 }
 
 static lv_obj_t *make_label(lv_obj_t *parent, const lv_font_t *font,
@@ -1015,15 +1455,9 @@ static void build_deck_view(lv_obj_t *scr)
     lv_obj_clear_flag(nav, LV_OBJ_FLAG_SCROLLABLE);
 
     /* 36 px, not the widget's 24: this one is hit with a finger. */
-    btn_prev = lv_btn_create(nav);
-    lv_obj_set_size(btn_prev, 36, 36);
-    lv_obj_align(btn_prev, LV_ALIGN_LEFT_MID, PAD, 0);
-    lv_obj_set_style_bg_color(btn_prev, CLR_SURFACE, LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(btn_prev, CLR_RULE, LV_STATE_PRESSED);
-    lv_obj_set_style_border_width(btn_prev, 0, LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(btn_prev, 0, LV_STATE_DEFAULT);
+    btn_prev = make_button(nav, 36, 36, CLR_SURFACE, CLR_RULE, cb_prev);
     lv_obj_set_style_radius(btn_prev, LV_RADIUS_CIRCLE, LV_STATE_DEFAULT);
-    lv_obj_add_event_cb(btn_prev, cb_prev, LV_EVENT_CLICKED, NULL);
+    lv_obj_align(btn_prev, LV_ALIGN_LEFT_MID, PAD, 0);
     lv_obj_t *l_prev = make_label(btn_prev, FONT_META, CLR_DIM, 0);
     lv_label_set_text(l_prev, LV_SYMBOL_LEFT);
     lv_obj_align(l_prev, LV_ALIGN_CENTER, 0, 0);
@@ -1032,15 +1466,9 @@ static void build_deck_view(lv_obj_t *scr)
     lv_label_set_text(lbl_counter, "—");
     lv_obj_align(lbl_counter, LV_ALIGN_CENTER, 0, 0);
 
-    btn_next = lv_btn_create(nav);
-    lv_obj_set_size(btn_next, 36, 36);
-    lv_obj_align(btn_next, LV_ALIGN_RIGHT_MID, -PAD, 0);
-    lv_obj_set_style_bg_color(btn_next, CLR_ACCENT, LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(btn_next, CLR_DIM, LV_STATE_PRESSED);
-    lv_obj_set_style_border_width(btn_next, 0, LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(btn_next, 0, LV_STATE_DEFAULT);
+    btn_next = make_button(nav, 36, 36, CLR_ACCENT, CLR_DIM, cb_next);
     lv_obj_set_style_radius(btn_next, LV_RADIUS_CIRCLE, LV_STATE_DEFAULT);
-    lv_obj_add_event_cb(btn_next, cb_next, LV_EVENT_CLICKED, NULL);
+    lv_obj_align(btn_next, LV_ALIGN_RIGHT_MID, -PAD, 0);
     lv_obj_t *l_next = make_label(btn_next, FONT_META, CLR_BG, 0);
     lv_label_set_text(l_next, LV_SYMBOL_RIGHT);
     lv_obj_align(l_next, LV_ALIGN_CENTER, 0, 0);
@@ -1085,7 +1513,6 @@ static void build_list_view(lv_obj_t *scr)
         lv_obj_set_width(card[i], BODY_W);
         lv_obj_set_height(card[i], LV_SIZE_CONTENT);
         lv_obj_set_style_bg_opa(card[i], LV_OPA_COVER, LV_STATE_DEFAULT);
-        lv_obj_set_style_bg_opa(card[i], 200, LV_STATE_PRESSED);
         lv_obj_set_style_border_width(card[i], 0, LV_STATE_DEFAULT);
         lv_obj_set_style_shadow_width(card[i], 0, LV_STATE_DEFAULT);
         lv_obj_set_style_radius(card[i], CARD_RADIUS, LV_STATE_DEFAULT);
@@ -1147,8 +1574,14 @@ static void build_detail_view(lv_obj_t *scr)
     lv_obj_set_size(d_topbar, EXAMPLE_LCD_H_RES, HEADER_H);
     lv_obj_set_pos(d_topbar, 0, 0);
     strip_chrome(d_topbar);
-    lv_obj_set_style_bg_opa(d_topbar, LV_OPA_COVER, LV_STATE_DEFAULT);
     lv_obj_clear_flag(d_topbar, LV_OBJ_FLAG_SCROLLABLE);
+    /* Deliberately left transparent (strip_chrome's default) rather than
+     * painted in the story's tint. It is a layout row, and cont_detail behind
+     * it is already that exact colour — but cont_detail is rounded during the
+     * expansion and LVGL clips children to the parent's *rectangle*, not to
+     * its rounded shape. An opaque bar here would square off the two top
+     * corners for the whole animation. Nothing scrolls under it: detail_body
+     * starts below it and is clipped to its own bounds. */
 
     /* Back, then a gap, then badge and score at the right. Flex rather than
      * lv_obj_align_to: aligning the badge off the score is resolved once, at
@@ -1212,15 +1645,9 @@ static void build_detail_view(lv_obj_t *scr)
 
     /* LISTEN / STOP — pinned to the bottom rather than sitting in the scroll,
      * so it is reachable without paging to the end of an 800-word summary. */
-    btn_listen = lv_btn_create(cont_detail);
-    lv_obj_set_size(btn_listen, EXAMPLE_LCD_H_RES, NAV_H);
+    btn_listen = make_button(cont_detail, EXAMPLE_LCD_H_RES, NAV_H,
+                             CLR_INK, CLR_RULE, cb_listen);
     lv_obj_set_pos(btn_listen, 0, EXAMPLE_LCD_V_RES - NAV_H);
-    lv_obj_set_style_bg_color(btn_listen, CLR_INK, LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(btn_listen, 184, LV_STATE_PRESSED);
-    lv_obj_set_style_border_width(btn_listen, 0, LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(btn_listen, 0, LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(btn_listen, 0, LV_STATE_DEFAULT);
-    lv_obj_add_event_cb(btn_listen, cb_listen, LV_EVENT_CLICKED, NULL);
 
     lbl_listen = make_label(btn_listen, FONT_TITLE, CLR_ACCENT, 0);
     lv_obj_set_style_text_letter_space(lbl_listen, META_TRACKING, LV_STATE_DEFAULT);

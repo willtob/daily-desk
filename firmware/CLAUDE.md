@@ -1,5 +1,12 @@
 # News Display — ESP32-S3-Touch-LCD-3.49
 
+> **Doing UI or animation work here? Read
+> [WORKING-NOTES.md](WORKING-NOTES.md) first.** This file is what the code is;
+> that one is how work on it goes wrong. Short version: measure on the board
+> before changing anything, keep the sim's buffer setup matching the driver,
+> verify with assertions rather than screenshots, and flash one behavioural
+> change at a time.
+
 Touch news reader for the 172×640 portrait panel. Fetches a scored, curated
 digest over HTTP from the `esp-news-reporter` backend (`~/dev/esp-news-reporter`),
 shows it as a deck of cards, and reads articles aloud through the ES8311 codec.
@@ -298,6 +305,110 @@ Specifics that are easy to undo by accident:
   next, so a fast double press steps twice instead of stranding a card.
 - View transitions animate `x` (or `y` for the list) via `lv_anim`;
   `lv_anim_del` runs before each start so a fast double-swipe cannot stack.
+- Opening a story is a **geometry expansion, not a slide**. `cont_detail` is a
+  full-screen container whose children are absolutely positioned, and LVGL
+  clips children to their parent's rectangle — so `expand_cb()` starting it at
+  the tapped card's `lv_obj_get_coords()` rect, at `CARD_RADIUS`, in the card's
+  own tint, and growing it to fill the panel is the entire transition. Position,
+  size and radius only: no transform, no opacity, therefore no intermediate
+  layer (see below for why that matters), and no measurable cost on top of the
+  whole-panel blit `full_refresh` already does every frame.
+  - The origin is stored as an `lv_obj_t *` and its coordinates are read fresh
+    at collapse time, so a list scrolled since opening still shrinks back to
+    the right card.
+  - `d_topbar` is deliberately **transparent**, not painted in the story's
+    tint. `cont_detail` behind it is already that colour, and an opaque child
+    would square off the two rounded top corners for the whole animation —
+    LVGL clips to the parent's rectangle, not to its rounded shape.
+  - The lateral slide survives only for detail → detail paging, where there is
+    no card on screen to grow from.
+
+### The frame budget, measured
+
+Do not guess at this and do not tune `LV_DISP_DEF_REFR_PERIOD` hoping it helps.
+Timed on the board by counting `lv_anim` exec callbacks against `millis()`:
+
+| animation | frames | wall time | per frame |
+|---|---|---|---|
+| deck flip (`FLIP_MS` 280) | 5 | 350 ms | **70 ms** |
+| detail expand (`EXPAND_MS` 400) | 11 | 410 ms | **37 ms** |
+
+So the panel runs animations at **14–27 fps**, and the refresh period is *not*
+the limit — it is already 30 ms and neither animation reaches it. The limit is
+render time plus a 220 KB full-panel blit (`full_refresh = 1`, every frame,
+whatever changed). Lowering the period only queues work that cannot be
+delivered; that is what wedged the display the one time it was tried.
+
+The flip is the *slower* of the two despite moving less, because `apply_slot()`
+drops the faces' opacity below 255 and LVGL renders anything translucent
+through a layer. Two cards in flight, two layers, every frame.
+
+**The lever is therefore distance-per-frame, not cost.** At 14–27 fps, LVGL's
+stock easings are actively wrong: they are shaped for 60 fps, where a
+front-loaded curve reads as responsiveness. `lv_anim_path_ease_out` over 6
+frames puts **36.5%** of the whole distance in the first one, then 26, 17, 10,
+5, 4 — a lurch followed by a crawl. On the deck flip that is invisible because
+the card only moves 74 px in total. On a 364 px expansion it was the entire
+reason it looked broken.
+
+`path_expand()` is a near-linear `lv_bezier3(t, 0, 300, 800, 1024)` and the
+same measurement gives 8.8, 10.2, 11.0, 11.0, 11.5, 10.7, 10.4, 9.9, 8.5, 8.0.
+Flat, with a soft landing. If you add another large-travel animation, give it
+this path rather than a stock one, and check it with `sim --geom`.
+
+### Animations must never carry a fixed start value
+
+`lv_anim_init()` sets `early_apply = 1`, so `lv_anim_start()` applies
+`start_value` **immediately**. An animation phrased as "0 → 256 of the journey
+from the card to full screen" therefore snaps the view onto the card the
+instant it starts, and its inverse snaps it to full screen. Steady state hides
+this — the view is already at the start value, so applying it changes nothing.
+Interrupt or restart one and you get a single frame of somewhere else before
+the animation plays: opening flashed the whole article, and closing flashed a
+pale story tint edge to edge, which on the light default theme reads as white.
+
+The fix is structural, not a guard: `rect_cb` interpolates between two
+`lv_area_t`s and `detail_move_to()` captures `from` as *wherever the view
+currently is* at the moment of starting. `start_value` is then always a no-op
+and there is nothing left to teleport to. `det_cur` tracks the geometry rather
+than `lv_obj_get_coords()` reading it back, because `lv_obj_set_pos()` defers
+to the next layout pass — set a rect and read it back in the same call and you
+get the previous one.
+
+The same rule killed the lateral slide for paging: it parked `cont_detail` off
+the right edge first, exposing the deck through a story that had not moved.
+Paging now animates `translate_x` on `detail_body` alone, so the opaque
+full-screen tint never moves and nothing behind it is uncovered.
+
+### The default theme puts hover on a touchscreen
+
+`lv_btn` picks up `styles->pressed` (a darkening colour filter) plus
+`transition_delayed` in and `transition_normal` out — a mouse idiom, and it
+leaves a highlight sitting on a control after the finger is gone.
+
+Two ways of switching it off do not work:
+
+- `lv_obj_set_style_transition(o, NULL, sel)` is a **null dereference**.
+  `lv_obj_set_state()` walks `tr->props` with no NULL check (`lv_obj.c:913`),
+  so the object segfaults on its first state change — the first press.
+- Overriding it with an empty descriptor does nothing either. That same loop
+  gathers transitions from *every* style on the object and keeps the one whose
+  selector has the highest state, so the theme's `LV_STATE_PRESSED` entry
+  outranks anything set at the default state.
+
+`lv_obj_remove_style_all()` then styling from scratch is what works; see
+`make_button()`. Note `LV_THEME_DEFAULT_DARK` is 0, so the base `lv_obj` style
+is **white** — anything that ends up with `bg_opa` set and no `bg_color` shows
+up as a white block.
+
+**Never make hiding a full-screen container reachable only from an
+`lv_anim` ready callback.** A deleted or interrupted animation does not fire
+one, and `cont_detail` / `cont_list` are full-screen and `CLICKABLE`. A hide
+that gets skipped leaves an invisible surface swallowing every tap, which does
+not present as a missed animation — it presents as the entire UI having died,
+with a perfectly correct-looking screen. `detail_park()` is the unconditional
+put-it-away path and every route out of a story ends there, the animated one
+included.
 
 ### What the deck could not copy from the widget
 

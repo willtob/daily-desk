@@ -121,6 +121,15 @@ source and exact score, the summary in a scrollable body, and `LISTEN` pinned
 at the bottom so it is reachable without paging to the end. Swipe right to go
 back — to whichever view you opened it from — or swipe left for the next story.
 
+The card **expands into** the story: the detail view starts at the tapped
+card's exact rect, in its colour and at its corner radius, and grows to fill
+the panel. Swiping back shrinks it into whichever card it came from, wherever
+that card has since scrolled to. It used to slide in from the right, which read
+as arriving at a different screen instead of opening the thing you touched —
+on a panel 172 px wide that thread is worth more than it is on a phone. Paging
+from one story to the next still slides sideways, because there is no card on
+screen for it to grow out of.
+
 Touch drag scrolls; LVGL suppresses the click when a press becomes a drag, so
 scrolling past a card never opens it.
 
