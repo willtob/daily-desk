@@ -107,6 +107,38 @@ themes:
     - name: NBC6 Miami
       url: "https://www.nbcmiami.com/?rss=y"
 
+  # Things to actually go and do in Barcelona — exhibitions, openings, festivals,
+  # restaurants. Separate from `spain` because it is a different kind of reading:
+  # `spain` is what happened, this is what's on. The big two here (Time Out, La
+  # Vanguardia Comer) publish their back catalogue in the feed, so most of what
+  # they return is years old and the lookback window is what keeps it out.
+  barcelona_dates:
+    - name: Barcelona Secreta
+      url: https://barcelonasecreta.com/feed/
+    # timeout.es, not timeout.com/barcelona: the .com feed carries the same
+    # listicles but stamped with their original publish dates (2019 and older),
+    # so every entry falls outside the lookback and the feed contributes nothing.
+    #
+    # Two of its entries — /que-hacer/el-fin-de-semana-ideal and
+    # /que-hacer/10-cosas-para-hacer-esta-semana — are rolling hub pages: one
+    # URL, re-dated every week, whose body is a grid of cards rather than an
+    # article. They score highest of anything here (the titles are almost the
+    # interest phrases verbatim) and summarize worst, because the extractor
+    # takes the largest text block on the page and that is whatever feature is
+    # promoted at the top. The seen store hides them after one appearance and
+    # the per-article entries behind them are fine, so this is a first-run
+    # wart, not a standing one.
+    - name: Time Out Barcelona
+      url: https://www.timeout.es/barcelona/es/feed.rss
+    - name: La Vanguardia Comer
+      url: https://www.lavanguardia.com/rss/comer.xml
+    - name: Barcelona Cultura
+      url: https://www.barcelona.cat/barcelonacultura/es/rss.xml
+    # Catalan-language weekend agenda. Posts in bursts around the weekend rather
+    # than daily, so it is empty on a Tuesday run by nature, not by breakage.
+    - name: beteve Agenda
+      url: https://beteve.cat/agenda/feed/
+
   spain:
     - name: El Pais English
       url: https://feeds.elpais.com/mrss-s/pages/ep/site/english.elpais.com/portada

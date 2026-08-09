@@ -40,6 +40,11 @@ typedef struct {
     char  source[NEWS_SOURCE_LEN];
     char  area[NEWS_AREA_LEN];    /* matched_area from the score node */
     float score;
+    /* The exploration slot: the backend appends one article picked *because*
+     * it scored badly. Always last in the payload, and styled as its own thing
+     * rather than as its area — the area is only the closest the profile got,
+     * so tinting the card by it would be a lie the size of the whole card. */
+    bool  wildcard;
 } news_article_t;
 
 /* Written only by news_task, read by the LVGL UI task. */

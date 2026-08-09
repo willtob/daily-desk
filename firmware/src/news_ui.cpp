@@ -314,8 +314,15 @@ static const area_style_t AREA_STYLES[] = {
     { "startup_vc",         "STARTUP",  0xFDD271 },
     { "florida",            "FLORIDA",  0xE48142 },
     { "spain",              "SPAIN",    0xD6683F },
+    { "barcelona_dates",    "BCN PLAN", 0xEE9B85 },
 };
 #define AREA_STYLE_COUNT (sizeof(AREA_STYLES) / sizeof(AREA_STYLES[0]))
+
+/* The wildcard overrides its area entirely. The whole ramp above is warm, so
+ * the one card that isn't a match for anything is the one cool card on the
+ * deck — it reads as "different kind of thing" from across the desk, before
+ * the badge is legible. */
+static const area_style_t WILDCARD_STYLE = { "", "WILDCARD", 0xC3D4E2 };
 
 /* The wallpaper's near-white. An unknown area gets a neutral card rather than
  * vanishing, so a new area in interests.yaml shows up as un-styled instead of
@@ -330,6 +337,14 @@ static const area_style_t *area_style(const char *area)
         }
     }
     return &AREA_FALLBACK;
+}
+
+/* Prefer this over area_style() wherever a whole article is in hand — it is
+ * the only place that knows the wildcard outranks the area. */
+static const area_style_t *article_style(const news_article_t *a)
+{
+    if (!a) return &AREA_FALLBACK;
+    return a->wildcard ? &WILDCARD_STYLE : area_style(a->area);
 }
 
 /* Score → bar width in pixels, clamped to the visible band. */
@@ -550,7 +565,7 @@ static void face_fill(int f, int idx)
     if (idx < 0 || idx >= news_count) return;
 
     const news_article_t *a = &news_articles[idx];
-    const area_style_t   *s = area_style(a->area);
+    const area_style_t   *s = article_style(a);
     lv_color_t            c = lv_color_hex(s->color);
 
     lv_obj_set_style_bg_color(face[f], c, LV_STATE_DEFAULT);
@@ -578,8 +593,8 @@ static void face_fill(int f, int idx)
 
 static void peek_set_tint(int i, int idx)
 {
-    const area_style_t *s = area_style(
-        (idx >= 0 && idx < news_count) ? news_articles[idx].area : NULL);
+    const area_style_t *s = article_style(
+        (idx >= 0 && idx < news_count) ? &news_articles[idx] : NULL);
     lv_obj_set_style_bg_color(deck_peek[i], lv_color_hex(s->color), LV_STATE_DEFAULT);
 }
 
@@ -690,8 +705,8 @@ static void step_deck(int delta)
 
     for (int i = 0; i < PEEK; i++) {
         peek_from[i] = lv_obj_get_style_bg_color(deck_peek[i], LV_PART_MAIN);
-        const area_style_t *s = area_style(
-            news_articles[deck_index(deck_pos + delta + i + 1)].area);
+        const area_style_t *s = article_style(
+            &news_articles[deck_index(deck_pos + delta + i + 1)]);
         peek_to[i] = lv_color_hex(s->color);
     }
 
@@ -1146,7 +1161,7 @@ static void show_detail(int idx, lv_obj_t *origin)
     view        = VIEW_DETAIL;
 
     const news_article_t *a = &news_articles[idx];
-    const area_style_t   *s = area_style(a->area);
+    const area_style_t   *s = article_style(a);
     lv_color_t            c = lv_color_hex(s->color);
 
     /* Same colour as the card it came from, edge to edge — the first frame of
@@ -1354,7 +1369,7 @@ static void render_list(void)
         }
 
         const news_article_t *a = &news_articles[i];
-        const area_style_t   *s = area_style(a->area);
+        const area_style_t   *s = article_style(a);
         lv_color_t            c = lv_color_hex(s->color);
 
         lv_obj_set_style_bg_color(card[i], c, LV_STATE_DEFAULT);

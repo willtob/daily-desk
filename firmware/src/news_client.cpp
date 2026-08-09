@@ -124,6 +124,7 @@ static void load_sample_data(void)
         copy_field(news_articles[i].source,  NEWS_SOURCE_LEN,  samples[i].source);
         copy_field(news_articles[i].area,    NEWS_AREA_LEN,    samples[i].area);
         news_articles[i].score = samples[i].score;
+        news_articles[i].wildcard = false;
     }
 
     news_count = n;
@@ -179,6 +180,9 @@ static bool news_refresh_once(void)
         copy_field(news_articles[i].source,  NEWS_SOURCE_LEN,  a["source"]);
         copy_field(news_articles[i].area,    NEWS_AREA_LEN,    a["matched_area"]);
         news_articles[i].score = a["score"] | 0.0f;
+        /* Absent on digests written before the wildcard existed, and on any
+         * hand-made payload — defaults to false, which is the old behaviour. */
+        news_articles[i].wildcard = a["wildcard"] | false;
         i++;
     }
 

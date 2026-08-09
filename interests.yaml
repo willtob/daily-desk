@@ -136,3 +136,30 @@ areas:
       - "incendio forestal, inundaciones u ola de calor en España"
       - "huelga de transporte o interrupción de vuelos en España"
       - "elecciones y política española"
+
+  - name: barcelona_dates
+    weight: 1.0
+    description: >
+      Things to actually go and do in Barcelona with someone — a plan for a
+      Friday rather than a headline. New restaurants and bars worth booking,
+      exhibitions and concerts that are on right now, festivals and street
+      parties, rooftops and viewpoints, and day trips reachable from the city.
+      What I want is the specific and the datable: a place with a name, a show
+      with a run, a weekend with a programme. General travel writing about
+      Spain, and restaurant reviews of places in other cities, are not this.
+    references:
+      - "best new restaurants and bars to book in Barcelona right now"
+      - "exhibition, concert, or theatre show on in Barcelona this week"
+      - "what to do in Barcelona this weekend: plans, festivals, and street parties"
+      - "romantic evening in Barcelona: rooftop bar, viewpoint, or dinner spot"
+      - "day trip from Barcelona: beaches, wineries, and towns in Catalonia"
+      # Every feed behind this area publishes in Spanish or Catalan, so unlike
+      # the tech areas it lives or dies on these phrases — the English ones
+      # above are effectively the runner-up, not the match. Same reasoning as
+      # the Spanish references in `spain`, but load-bearing here rather than a
+      # correction.
+      - "los mejores planes en Barcelona este fin de semana"
+      - "nuevo restaurante, bar o terraza que abre en Barcelona"
+      - "exposición, concierto o espectáculo en Barcelona"
+      - "escapada de fin de semana desde Barcelona en Cataluña"
+      - "què fer a Barcelona aquest cap de setmana: agenda i activitats"

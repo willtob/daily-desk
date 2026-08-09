@@ -197,6 +197,11 @@ def _add_curate_args(parser: argparse.ArgumentParser) -> None:
         default=1,
         help="Drop articles whose summary is shorter than this (0 = keep all).",
     )
+    parser.add_argument(
+        "--no-wildcard",
+        action="store_true",
+        help="Drop the low-scoring exploration article from the end of the page.",
+    )
 
 
 def _build_client(profile, no_cache: bool) -> EmbeddingClient:
@@ -236,14 +241,18 @@ def curate_main() -> None:
         per_area_cap=args.per_area_cap,
         seen=seen,
         min_summary_chars=args.min_summary,
+        wildcard=not args.no_wildcard,
     )
 
     print("\n=== Front page ===")
     if not curated:
         raise SystemExit("  nothing cleared curation — try --no-seen or a wider --hours")
     for rank, art in enumerate(curated, 1):
-        print(f"  {rank:>2}. {art.score:.4f} [{art.matched_area:<18}] "
+        marker = " *" if art.is_wildcard else "  "
+        print(f"  {rank:>2}.{marker}{art.score:.4f} [{art.matched_area:<18}] "
               f"{art.source[:18]:<18} {art.title[:52]}")
+    if any(a.is_wildcard for a in curated):
+        print("\n  (* wildcard — picked from the bottom quartile, not by score)")
 
     print("\n  areas represented:")
     for area, count in Counter(a.matched_area for a in curated).most_common():
@@ -298,7 +307,8 @@ def summarize_main() -> None:
             per_area_cap=args.per_area_cap,
             seen=None if args.no_seen else SeenStore(),
             min_summary_chars=args.min_summary,
-            )
+            wildcard=not args.no_wildcard,
+        )
         summarized = summarize_articles(
             curated,
             summarizer=Summarizer(
@@ -374,7 +384,8 @@ def digest_main() -> None:
             top_n=args.top,
             per_area_cap=args.per_area_cap,
             min_summary_chars=args.min_summary,
-            )
+            wildcard=not args.no_wildcard,
+        )
     except MissingAPIKeyError as exc:
         raise SystemExit(f"\n{exc}")
 

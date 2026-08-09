@@ -141,7 +141,13 @@ struct AreaStyle {
         "startup_vc":         AreaStyle(label: "STARTUP",  tint: Color(hex: 0xFDD271)),
         "florida":            AreaStyle(label: "FLORIDA",  tint: Color(hex: 0xE48142)),
         "spain":              AreaStyle(label: "SPAIN",    tint: Color(hex: 0xD6683F)),
+        "barcelona_dates":    AreaStyle(label: "BCN PLAN", tint: Color(hex: 0xEE9B85)),
     ]
+
+    /// The wildcard overrides its area entirely. The table above is warm end to
+    /// end, so the one card that matched nothing is the one cool card in the
+    /// deck — legible as "different kind of thing" before the badge is read.
+    private static let wildcard = AreaStyle(label: "WILDCARD", tint: Color(hex: 0xC3D4E2))
 
     /// The wallpaper's near-white. An unknown area gets a neutral card rather
     /// than vanishing, so a new area in interests.yaml shows up as un-styled
@@ -151,6 +157,13 @@ struct AreaStyle {
     static func forArea(_ area: String?) -> AreaStyle {
         guard let area, let style = table[area] else { return fallback }
         return style
+    }
+
+    /// Prefer this wherever a whole article is in hand — it is the only place
+    /// that knows the wildcard outranks the article's area, which for a
+    /// wildcard is merely the closest the profile got rather than a match.
+    static func forArticle(_ article: Article) -> AreaStyle {
+        article.wildcard == true ? wildcard : forArea(article.matchedArea)
     }
 }
 

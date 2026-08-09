@@ -23,7 +23,7 @@ struct DetailView: View {
     /// See Scrollable — snapshot mode only.
     var scrollable = true
 
-    private var style: AreaStyle { AreaStyle.forArea(article.matchedArea) }
+    private var style: AreaStyle { AreaStyle.forArticle(article) }
 
     private var isThisPlaying: Bool { audio.playingIndex == index }
 

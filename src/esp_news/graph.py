@@ -44,6 +44,7 @@ def build_digest_graph(
     top_n: int = 10,
     per_area_cap: int | None = 3,
     min_summary_chars: int = 1,
+    wildcard: bool = True,
     when: date | None = None,
 ):
     """Compile the six-node digest graph. Returns a compiled LangGraph.
@@ -78,6 +79,7 @@ def build_digest_graph(
                 per_area_cap=per_area_cap,
                 seen=seen,
                 min_summary_chars=min_summary_chars,
+                wildcard=wildcard,
             )
         }
 

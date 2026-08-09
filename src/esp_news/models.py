@@ -33,6 +33,11 @@ class Article(BaseModel):
     area_scores: dict[str, float] = Field(  # every area's weighted similarity
         default_factory=dict
     )
+    # Picked *because* it scored badly — the exploration slot at the end of the
+    # digest (Phase 4). Kept as a flag rather than inferred from the score so
+    # everything downstream can tell "off-profile on purpose" from "the front
+    # page was thin today".
+    is_wildcard: bool = False
 
 
 class DigestState(BaseModel):

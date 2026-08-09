@@ -27,9 +27,15 @@ cp .env.example .env   # then add your keys
 ```
 
 ## Feeds
-37 feeds are configured in [feeds.yaml](feeds.yaml), grouped into 9 themes:
+42 feeds are configured in [feeds.yaml](feeds.yaml), grouped into 10 themes:
 `embedded_wearables`, `big_tech`, `startup_vc`, `ai`, `ai_research`, `ml_applied`,
-`eng_blogs`, `florida`, `spain`. Edit freely.
+`eng_blogs`, `florida`, `barcelona_dates`, `spain`. Edit freely.
+
+`barcelona_dates` is the what's-on half of Barcelona, separate from `spain`'s
+what-happened: Barcelona Secreta, Time Out, La Vanguardia's food section,
+Barcelona Cultura and betevé's weekend agenda. All five publish in Spanish or
+Catalan, which is why the matching interest area carries reference phrases in
+both.
 
 The theme is only a provenance tag — scoring happens against the interest areas in
 [interests.yaml](interests.yaml), and any feed can win on any area.
@@ -71,6 +77,7 @@ uv run esp-digest               # run the whole graph, print and write digests/<
 uv run esp-digest --dry-run     # print only — writes nothing, marks nothing as seen
 uv run esp-digest --top 15 --per-area-cap 4
 uv run esp-digest --no-seen     # allow articles from earlier digests to reappear
+uv run esp-digest --no-wildcard # drop the low-scoring exploration article
 ```
 
 `esp-digest` is the v1 entry point: it runs the full LangGraph pipeline
@@ -87,6 +94,16 @@ already appeared, keyed by canonical URL so a link that picks up tracking params
 still counts. Entries expire after 45 days. Only articles that actually made a
 digest are recorded, and only after the file is written — a crash mid-run can't
 silently suppress them from the next one. Use `--no-seen` to ignore it.
+
+**The wildcard.** After the ranked page, the digest carries one extra article
+picked *because* it scored badly — its own `## wildcard` section at the end of
+the markdown, last in the JSON, and a cool-tinted `WILDCARD` card on the device
+and the widget. The profile is a fitness function, so left alone it can only
+ever return more of what it already matches; this is the one slot it doesn't
+control. It's drawn at random from the worst-scoring quarter of everything that
+cleared the filters rather than from the very bottom — the absolute floor is the
+same kind of thing every day (a two-line sports result, a weather bulletin),
+which is off-profile without being a new topic. `--no-wildcard` turns it off.
 
 Each entry carries a why-it-scored line — winning area, score, and runner-up.
 That's what makes the digest log useful for tuning `interests.yaml`: when a

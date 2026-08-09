@@ -14,6 +14,7 @@ digest short, a second pass fills the remaining slots by score alone.
 from __future__ import annotations
 
 import logging
+import random
 from collections import Counter
 
 from langsmith import traceable
@@ -26,6 +27,13 @@ logger = logging.getLogger(__name__)
 DEFAULT_TOP_N = 10
 DEFAULT_PER_AREA_CAP = 3
 
+# The wildcard is drawn from the worst-scoring quarter of everything that
+# cleared the filters, not from the single lowest score. The very bottom is
+# reliably the same kind of thing every day — a two-line sports result, a
+# weather bulletin — which is a bad match for the profile without being a new
+# topic. A quarter is wide enough that the pick moves around run to run.
+DEFAULT_WILDCARD_POOL = 0.25
+
 # Articles with no summary are dropped from the front page. They score fine —
 # a rolling "Live updates: Today's South Florida news" index page is a perfect
 # semantic match for local news — but there is nothing to read once you open
@@ -33,6 +41,32 @@ DEFAULT_PER_AREA_CAP = 3
 # tend to carry the date, so the seen store can't suppress them: they'd top
 # every digest forever.
 DEFAULT_MIN_SUMMARY_CHARS = 1
+
+
+def _pick_wildcard(
+    ranked: list[Article],
+    *,
+    exclude: set[str],
+    pool: float = DEFAULT_WILDCARD_POOL,
+    rng: random.Random | None = None,
+) -> Article | None:
+    """One article from the bottom of ``ranked``, flagged as the wildcard.
+
+    ``ranked`` is best-first and already filtered, so the tail is genuinely
+    off-profile rather than merely unread. Returns None when everything left
+    is already on the front page, which is what a thin corpus looks like.
+    """
+    candidates = [a for a in ranked if a.url not in exclude]
+    if not candidates:
+        return None
+
+    # At least one candidate however small the corpus, and never so wide a pool
+    # that it starts overlapping the stories that actually made the page.
+    depth = max(1, min(len(candidates), round(len(candidates) * pool)))
+    bottom = candidates[-depth:]
+
+    chosen = (rng or random).choice(bottom)
+    return chosen.model_copy(update={"is_wildcard": True})
 
 
 @traceable(run_type="chain", name="curate")
@@ -43,6 +77,9 @@ def curate_articles(
     per_area_cap: int | None = DEFAULT_PER_AREA_CAP,
     seen: SeenStore | None = None,
     min_summary_chars: int = DEFAULT_MIN_SUMMARY_CHARS,
+    wildcard: bool = True,
+    wildcard_pool: float = DEFAULT_WILDCARD_POOL,
+    rng: random.Random | None = None,
 ) -> list[Article]:
     """Rank, filter and cap scored articles down to the digest's front page.
 
@@ -51,6 +88,12 @@ def curate_articles(
     the diversity cap. ``min_summary_chars`` of 0 keeps summary-less articles.
     Returned articles are ordered best-scoring first — grouping for
     readability happens at render time.
+
+    ``wildcard`` appends one deliberately low-scoring article after the ranked
+    page, flagged with ``is_wildcard``. It is the only article here that isn't
+    chosen by the fitness function, and that's the point: the profile can only
+    return more of what it already knows about, so the digest needs one slot it
+    doesn't control. Pass ``rng`` to make the pick reproducible.
     """
     if not scored:
         logger.info("No articles to curate")
@@ -118,11 +161,27 @@ def curate_articles(
     # Backfill appends out of order; restore the score ranking.
     picked.sort(key=lambda a: a.score or 0.0, reverse=True)
 
+    # 4. The exploration slot — appended after the sort, so it stays last
+    #    however badly (or well) it happens to have scored.
+    if wildcard:
+        pick = _pick_wildcard(ranked, exclude=picked_urls, pool=wildcard_pool, rng=rng)
+        if pick is not None:
+            picked.append(pick)
+            area_counts[pick.matched_area or "unscored"] += 1
+            logger.info(
+                "Curate: wildcard %.4f [%s] %s — %s",
+                pick.score or 0.0,
+                pick.matched_area or "unscored",
+                pick.source,
+                pick.title[:60],
+            )
+
     logger.info(
-        "Curated %d of %d articles (top_n=%d, per_area_cap=%s): %s",
+        "Curated %d of %d articles (top_n=%d%s, per_area_cap=%s): %s",
         len(picked),
         len(scored),
         top_n,
+        " +1 wildcard" if any(a.is_wildcard for a in picked) else "",
         cap or "off",
         ", ".join(f"{a}={n}" for a, n in area_counts.most_common()) or "none",
     )

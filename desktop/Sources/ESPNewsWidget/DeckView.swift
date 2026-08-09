@@ -64,7 +64,7 @@ struct DeckView: View {
                     CardFace(article: article) { onOpen(index) }
                         .frame(width: geo.size.width, height: cardHeight(in: geo.size))
                         .modifier(Slot(slot: slot,
-                                       tint: AreaStyle.forArea(article.matchedArea).tint))
+                                       tint: AreaStyle.forArticle(article).tint))
                         // Only the top card reports a frame, and only when it
                         // is settled in slot 0 — see CardFrameKey.
                         .background(
@@ -223,7 +223,7 @@ struct CardFace: View {
 
     @State private var hovering = false
 
-    private var style: AreaStyle { AreaStyle.forArea(article.matchedArea) }
+    private var style: AreaStyle { AreaStyle.forArticle(article) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

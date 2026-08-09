@@ -217,10 +217,17 @@ Polling interval is 15 min (`NEWS_REFRESH_INTERVAL_MS`).
 | `startup_vc` | STARTUP | yellow |
 | `florida` | FLORIDA | coral |
 | `spain` | SPAIN | pink |
+| `barcelona_dates` | BCN PLAN | rose |
 
 An unrecognised area falls back to a grey `NEWS` badge, so adding an area to
 `interests.yaml` degrades gracefully instead of breaking the display. To give
 it real styling, add a row to `AREA_STYLES[]` in `src/news_ui.cpp`.
+
+`wildcard: true` on an article overrides all of that: the backend appends one
+deliberately low-scoring story to every digest, and it gets the `WILDCARD` badge
+and the one cool tint on the deck whatever its area says. Use `article_style()`
+rather than `area_style()` anywhere a whole article is in hand — that is the
+only function that knows the flag outranks the area.
 
 ## Structure
 

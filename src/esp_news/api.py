@@ -133,7 +133,13 @@ def get_digest_json(
     client (or a debugging browser tab) can ask for more.
     """
     payload = _load_latest()
-    articles = payload.get("articles", [])[:limit]
+    stored = payload.get("articles", [])
+    # Trim from the ranked stories, never the wildcard — same reasoning as
+    # digest_payload: it lives at the tail, and a plain slice would drop the one
+    # article that was put there on purpose.
+    wildcards = [a for a in stored if a.get("wildcard")]
+    ranked = [a for a in stored if not a.get("wildcard")]
+    articles = ranked[: max(0, limit - len(wildcards))] + wildcards[:limit]
 
     if max_summary < DEFAULT_JSON_SUMMARY_CHARS:
         for art in articles:

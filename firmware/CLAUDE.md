@@ -646,14 +646,17 @@ JS-only) the backend falls back to the RSS text rather than inventing one, so
 the occasional short entry is expected, not a bug.
 
 ```
-GET  {base}/digest.json     {"articles":[{title,summary,source,matched_area,score,url}]}
+GET  {base}/digest.json     {"articles":[{title,summary,source,matched_area,score,url,wildcard}]}
 GET  {base}/audio/{i}.pcm   raw PCM: 16 kHz, 16-bit signed LE, mono
 POST {base}/refresh         re-run the pipeline; 202 immediately, work in background
 GET  {base}/health          {"refreshing": bool, ...} — how the device knows it finished
 ```
 
 Field names match the Python `Article` model exactly, so the backend needs no
-translation layer. Serve it with:
+translation layer. `wildcard` marks the exploration slot the backend appends
+last — one article picked *because* it scored badly — and it is the one field
+that overrides `matched_area` for styling; see `article_style()`. It is absent
+from digests written before it existed, and parses as `false` there. Serve it with:
 
 ```bash
 cd ~/dev/esp-news-reporter && uv run esp-serve --port 8010

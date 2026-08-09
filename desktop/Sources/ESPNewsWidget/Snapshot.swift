@@ -241,5 +241,25 @@ enum Snapshot {
             score: 0.2680,
             url: "https://example.com/d"
         ),
+        Article(
+            title: "Los 23 mejores arroces de Barcelona",
+            summary: "Paellas, arroces melosos y fideuàs: los clásicos del Poblenou y la Barceloneta, y algunas aperturas recientes del Eixample.",
+            source: "Time Out Barcelona",
+            matchedArea: "barcelona_dates",
+            score: 0.6640,
+            url: "https://example.com/e"
+        ),
+        // Last, and deliberately carrying an area that is already in the deck:
+        // the badge has to come from the wildcard flag, not from the area being
+        // unrecognised. Same case the firmware simulator covers.
+        Article(
+            title: "A 1970s synthesiser restored with a logic analyser and a lot of patience",
+            summary: "The exploration slot: picked from the bottom of the scores on purpose, so the digest carries one thing the profile did not ask for.",
+            source: "Hackaday",
+            matchedArea: "embedded_wearables",
+            score: 0.1661,
+            url: "https://example.com/f",
+            wildcard: true
+        ),
     ]
 }
