@@ -269,6 +269,77 @@ static lv_coord_t score_bar_w(float score, lv_coord_t full)
     return w < 3 ? 3 : w;   /* always a sliver, so low reads as low not missing */
 }
 
+/* ── The Markdown subset, taken back out ──────────────────────────────
+ *
+ * Since Phase 9c the summarizer may emit `**bold**` and `- ` bullets, and
+ * separates paragraphs with a blank line (see src/esp_news/markdown.py). The
+ * Mac panel renders all of it. This one cannot, and not for want of effort:
+ * **an LVGL 8 label draws in exactly one font**, so bold inside a paragraph
+ * would mean splitting every paragraph into separate label objects and
+ * positioning them by hand — on a display where the widget pool is already
+ * half spent and every frame is a whole-panel blit.
+ *
+ * So the emphasis is dropped and the text is kept. Doing nothing is not an
+ * option: the asterisks would simply be drawn, which is worse than losing the
+ * bold. Bullets do survive, as U+2022 — it is in the generated font range
+ * (see tools/gen_fonts.sh), and a marker reads as a list even without the
+ * hanging indent LVGL cannot give it.
+ *
+ * If emphasis is ever wanted here, lv_label_set_recolor() and `#RRGGBB text#`
+ * is the only inline styling LVGL 8 has; the difficulty is a colour that stays
+ * legible on all nine card tints, not the parsing. */
+static void md_strip(const char *src, char *dst, size_t cap, bool keep_bullets)
+{
+    size_t o = 0;
+    bool   line_start = true;
+
+    for (size_t i = 0; src[i] && o + 6 < cap; i++) {
+        /* `**` in either direction: emphasis is not representable, so both
+         * halves go and the words between them stay. */
+        if (src[i] == '*' && src[i + 1] == '*') { i++; continue; }
+
+        if (line_start) {
+            /* Indentation before a marker is not content. */
+            if (src[i] == ' ' || src[i] == '\t') continue;
+
+            if ((src[i] == '-' || src[i] == '*' || src[i] == '+') && src[i + 1] == ' ') {
+                if (keep_bullets) {
+                    dst[o++] = (char)0xE2;   /* U+2022 BULLET, in UTF-8 */
+                    dst[o++] = (char)0x80;
+                    dst[o++] = (char)0xA2;
+                    dst[o++] = ' ';
+                }
+                i++;                          /* and the space after it */
+                line_start = false;
+                continue;
+            }
+        }
+
+        line_start = (src[i] == '\n');
+        dst[o++] = src[i];
+    }
+    dst[o] = '\0';
+}
+
+/* The card excerpt is two clipped lines of a much longer summary, so it wants
+ * one run of prose: no markers, and no line breaks turning a list into
+ * fragments that read as a broken sentence. */
+static void md_plain(const char *src, char *dst, size_t cap)
+{
+    md_strip(src, dst, cap, false);
+
+    size_t o = 0;
+    bool   gap = false;
+    for (size_t i = 0; dst[i]; i++) {
+        char c = (dst[i] == '\n' || dst[i] == '\t') ? ' ' : dst[i];
+        if (c == ' ') { gap = true; continue; }
+        if (gap && o) dst[o++] = ' ';
+        gap = false;
+        dst[o++] = c;
+    }
+    dst[o] = '\0';
+}
+
 /* ── Paragraphing the summary ─────────────────────────────────────────
  *
  * The backend writes one ~800-character block with no line breaks in it. At
@@ -419,7 +490,13 @@ static void face_fill(int f, int idx)
     lv_label_set_text(f_score[f], sbuf);
 
     lv_label_set_text(f_title[f], a->title);
-    lv_label_set_text(f_summary[f], a->summary[0] ? a->summary : "");
+    if (a->summary[0]) {
+        static char excerpt[NEWS_SUMMARY_LEN + 96];
+        md_plain(a->summary, excerpt, sizeof(excerpt));
+        lv_label_set_text(f_summary[f], excerpt);
+    } else {
+        lv_label_set_text(f_summary[f], "");
+    }
     lv_label_set_text(f_source[f], a->source);
 
     lv_obj_set_width(f_bar[f], score_bar_w(a->score, TEXT_W));
@@ -942,9 +1019,21 @@ static void show_detail(int idx, lv_obj_t *origin)
     /* The empty case is real: a fetch failure leaves the RSS summary, and some
      * feeds ship nothing worth showing. */
     if (a->summary[0]) {
-        static char body[NEWS_SUMMARY_LEN + 64];
-        paragraphize(a->summary, body, sizeof(body));
-        lv_label_set_text(lbl_d_summary, body);
+        static char clean[NEWS_SUMMARY_LEN + 96];
+        static char body[NEWS_SUMMARY_LEN + 160];
+
+        md_strip(a->summary, clean, sizeof(clean), true);
+
+        /* Only pace it ourselves when the text arrived as one block. Summaries
+         * cached under PROMPT_VERSION 1 have no breaks at all and still need
+         * them; anything written since brings its own, and inserting more on
+         * top would cut the model's own paragraphs in half. */
+        if (strchr(clean, '\n')) {
+            lv_label_set_text(lbl_d_summary, clean);
+        } else {
+            paragraphize(clean, body, sizeof(body));
+            lv_label_set_text(lbl_d_summary, body);
+        }
     } else {
         lv_label_set_text(lbl_d_summary, "(no summary in the feed)");
     }

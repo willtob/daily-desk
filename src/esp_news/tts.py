@@ -23,6 +23,7 @@ from pathlib import Path
 from openai import OpenAI
 
 from esp_news.embeddings import MissingAPIKeyError
+from esp_news.markdown import strip_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -161,9 +162,15 @@ def speech_text(article: dict) -> str:
 
     Title then summary, with a pause between: hearing the headline first is
     what makes it possible to decide whether to keep listening.
+
+    The summary is stripped of its Markdown first. Since Phase 9c the
+    summarizer may emit ``**bold**`` and ``- `` bullets, and a speech model
+    given those either reads the asterisks out or lands on odd prosody. This is
+    the consumer that fails silently — a broken render is obvious on sight,
+    broken narration is only caught by listening to the whole thing.
     """
     title = (article.get("title") or "").strip()
-    summary = (article.get("summary") or "").strip()
+    summary = strip_markdown((article.get("summary") or "").strip())
     source = (article.get("source") or "").strip()
 
     parts = [title]
