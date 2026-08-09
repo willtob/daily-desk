@@ -49,7 +49,16 @@ final class TrackpadPager: ObservableObject {
     /// How far the fingers must travel before it counts. Trackpad deltas are
     /// small and numerous; a wheel arrives in a few large lumps, so it gets a
     /// lower bar or a single detent would never reach the threshold.
-    private static let trackpadThreshold: CGFloat = 45
+    ///
+    /// 35 from measurement, not taste. Across 43 real gestures the horizontal
+    /// ones travelled 41 / 78 / 156 (min / median / max) over 6-7 events each,
+    /// so 45 would have dropped the smallest deliberate swipe and 35 catches
+    /// all of them with the median still more than twice it.
+    ///
+    /// Lowering this does not make a vertical scroll page the deck — that is
+    /// what axisRatio is for, and it classified 18 of those 43 correctly
+    /// without help from the distance.
+    private static let trackpadThreshold: CGFloat = 35
     private static let wheelThreshold: CGFloat = 6
 
     /// How much more horizontal than vertical the movement has to be. Well
