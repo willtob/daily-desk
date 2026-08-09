@@ -323,6 +323,43 @@ Specifics that are easy to undo by accident:
   - The lateral slide survives only for detail → detail paging, where there is
     no card on screen to grow from.
 
+### The panel dims until you pick it up
+
+`imu_wake.cpp`. Three board facts make it cheap, and one of them is a trap:
+
+- The **QMI8658** IMU sits at `0x6B` on I2C port 0 and `i2c_bsp.c` **already
+  registers `imu_dev_handle`** for it. No new bus, no new device, no library —
+  `i2c_read_buff()` is all it takes.
+- **Touch is on port 1, the IMU on port 0.** The obvious worry when adding a
+  second I2C reader here is the touch controller, and there is nothing to
+  guard. Polling still runs on an `lv_timer` so it is serialised anyway.
+- **The backlight duty is inverted.** `lcd_bl_pwm_bsp.h` defines its levels as
+  `0xff - n`, so the brightest setting is duty `0` and `255` is off. Passing a
+  percentage straight to `setUpduty()` darkens the panel when you ask for
+  bright.
+
+The metric is the *change* in the acceleration vector between samples, not its
+magnitude: at rest an accelerometer reads ~1 g whatever its orientation, so
+magnitude says nothing, while tilting redistributes gravity across the axes.
+L1 norm, because it needs no square root and the threshold is empirical.
+
+Both halves were measured on the board rather than guessed:
+
+| | motion metric |
+|---|---|
+| at rest on a desk | 25–145 typical, worst spike **345** |
+| being picked up | p25 523, median 4243, p75 9380, peak **32068** |
+
+The useful finding is that this is **bimodal** — moving reads in the thousands,
+still reads in the tens, and almost nothing lands between 300 and 1200. So the
+threshold is insensitive across that whole range (500 catches 75% of pick-up
+samples, 1200 catches 68%), and the right move is the largest margin that costs
+nothing rather than the smallest number that works. `WAKE_MOTION` is 1200, i.e.
+3.5× the worst resting spike.
+
+Idleness is motion *and* `lv_disp_get_inactive_time()`, so touch and BOOT keep
+it lit for free, and it will not dim mid-narration.
+
 ### The frame budget, measured
 
 Do not guess at this and do not tune `LV_DISP_DEF_REFR_PERIOD` hoping it helps.

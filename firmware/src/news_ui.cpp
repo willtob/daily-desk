@@ -27,6 +27,9 @@
 #include "news_client.h"
 #include "news_audio.h"
 #include "wifi_manager.h"
+#ifdef ESP_PLATFORM
+#include "imu_wake.h"
+#endif
 #include "lvgl.h"
 #include "fonts/news_fonts.h"
 #include "user_config.h"
@@ -1791,4 +1794,14 @@ void news_ui_create(void)
     for (int f = 0; f < 2; f++) lv_obj_add_flag(face[f], LV_OBJ_FLAG_GESTURE_BUBBLE);
 
     lv_timer_create(ui_timer_cb, 250, NULL);
+
+#ifdef ESP_PLATFORM
+    /* Its own timer at 100 ms rather than folded into the 250 ms one: picking
+     * the panel up should light it before you have finished lifting it, and a
+     * quarter-second lag between the movement and the response reads as the
+     * board being slow rather than as a considered fade. Still on the LVGL
+     * task, so it is serialised with everything else. */
+    imu_wake_init();
+    lv_timer_create([](lv_timer_t *t) { (void)t; imu_wake_poll(); }, 100, NULL);
+#endif
 }

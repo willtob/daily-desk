@@ -133,6 +133,14 @@ screen for it to grow out of.
 Touch drag scrolls; LVGL suppresses the click when a press becomes a drag, so
 scrolling past a card never opens it.
 
+**The panel sits dim and lights when you pick it up.** The QMI8658 IMU drives
+an 8-bit PWM backlight: 25 s without motion or input drops it to 12% over a
+short ramp, and any real handling brings it back inside a poll or two. Touch,
+the BOOT button and playing narration all count as "in use", so reading a long
+story without moving the device will not dim it. Thresholds and the timeout are
+constants at the top of `src/imu_wake.cpp`, chosen from measurements on the
+board — see CLAUDE.md.
+
 The **BOOT** button (GPIO 0) is wired as: *back* when a story is open,
 *manual refresh* on the deck or the list. It is the widget's ↻ button.
 
