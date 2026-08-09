@@ -139,6 +139,20 @@ state back from the system every time it opens rather than caching it, because
 it can be changed behind the app's back in System Settings → General → Login
 Items, and a checkmark that disagrees with reality is worse than none.
 
+The same switch from the command line, for setting up a fresh install without
+launching the panel and clicking through a menu:
+
+```bash
+"/Applications/ESP News.app/Contents/MacOS/ESPNewsWidget" --login-item on
+"/Applications/ESP News.app/Contents/MacOS/ESPNewsWidget" --login-item status
+```
+
+**Run the copy you want registered.** `SMAppService` can only register
+`Bundle.main` — an app registers itself, and no system command can do it on
+another app's behalf — so whichever bundle you run that against is the one that
+starts at login. Registering `build/ESP News.app` and then running
+`make install` leaves the login item pointing at a path `make clean` deletes.
+
 ## Markdown in summaries
 
 Since Phase 9c the summarizer may emit a two-item subset — `**bold**` for the

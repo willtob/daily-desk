@@ -342,6 +342,41 @@ MainActor.assumeIsolated {
         exit(ok ? 0 : 1)
     }
 
+    // --login-item [on|off|status] reads or sets the Open at Login state and
+    // exits, without ever showing a panel.
+    //
+    // The menu item is still the normal way to do this. This exists because
+    // SMAppService can only register `Bundle.main` — an app registers itself,
+    // and there is no system command that can do it on another app's behalf —
+    // so setting it up from a script or a fresh install otherwise means
+    // launching the widget and clicking through a menu.
+    //
+    // Run the copy you actually want registered: launching the executable
+    // inside a bundle is enough for Bundle.main to resolve to that .app, and
+    // whichever path you run is the one that starts at login.
+    if let i = args.firstIndex(of: "--login-item") {
+        let verb = (i + 1 < args.count && !args[i + 1].hasPrefix("--")) ? args[i + 1] : "status"
+        guard LoginItem.available else {
+            let message = "login-item: unavailable — this is not a bundled build, so "
+                + "there is nothing for SMAppService to register. Use the installed .app.\n"
+            FileHandle.standardError.write(Data(message.utf8))
+            exit(1)
+        }
+        switch verb {
+        case "on":     _ = LoginItem.set(true)
+        case "off":    _ = LoginItem.set(false)
+        case "status": break
+        default:
+            FileHandle.standardError.write(Data("login-item: expected on, off, or status\n".utf8))
+            exit(2)
+        }
+        let enabled = LoginItem.isEnabled
+        print("login item: \(enabled ? "enabled" : "disabled") (\(Bundle.main.bundleURL.path))")
+        // Non-zero when the state asked for was not the state achieved —
+        // registration can fail, and a silent success would be a lie.
+        exit(verb == "status" || enabled == (verb == "on") ? 0 : 1)
+    }
+
     let app = NSApplication.shared
     let delegate = AppDelegate()
     app.delegate = delegate
