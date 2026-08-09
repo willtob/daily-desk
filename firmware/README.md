@@ -39,6 +39,44 @@ Reach screens that need input without touching anything:
 ./sim --shot out.bmp --tap 120 --swipe left    # open a story, go to the next
 ```
 
+`--tap` runs the animation out before the shot, so it can only ever show where
+a transition *ends* — which is the part that was never in doubt. To see the
+transition itself, `--tap-hold` returns as soon as the click is delivered and
+`--settle N` advances N frames of 20 ms:
+
+```bash
+./sim --shot mid.bmp --tap-hold 300 --settle 4   # 4 frames into the expand
+```
+
+Two flags for checking animations by measurement rather than by eye —
+`--geom` prints the detail view's rect every frame, and `--time` prints what
+each frame costs:
+
+```bash
+./sim --shot x.bmp --geom --tap-hold 300 --settle 30   # per-frame travel
+./sim --shot x.bmp --time --tap-hold 300 --settle 12   # per-frame cost
+```
+
+`--geom` exists because you cannot read a transition off the pixels: the deck
+behind it is the same tint as the card, and its header rule and ledges sit at
+exactly the edges you would be trying to measure, so a scanline finds the
+chrome and reports a confident wrong answer. Ask the object where it is.
+
+`--film PREFIX` writes every frame from that point on, which is the only way to
+catch a one-frame flicker — `--settle` cannot reach inside a tap, because the
+press and release run within `inject_tap`:
+
+```bash
+./sim --shot x.bmp --film /tmp/f/open --tap-hold 300 --settle 28
+```
+
+The sim uses **two full-screen buffers with `full_refresh = 1`**, matching
+`lvgl_port.c`. It used to use a single 172×80 partial buffer, which draws the
+same pixels by a different path — partial mode redraws invalidated rectangles,
+full refresh redraws everything and swaps buffers — so ordering bugs around
+hide/move/invalidate could appear on the board and not here. Keep these in
+step with the driver.
+
 The sample articles cover the cases that break layout — a very long title, a
 one-word title, an accented Spanish headline, an empty summary, and an
 interest area missing from `AREA_STYLES`.
