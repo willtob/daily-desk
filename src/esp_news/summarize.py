@@ -110,6 +110,11 @@ class Summarizer:
         self.api_calls = 0
         self.cache_hits = 0
         self.failures = 0
+        # Whether anything has been added to the cache since it was loaded.
+        # The counters can't answer that under concurrency — ``+=`` from six
+        # worker threads loses increments — and a lost increment would mean
+        # summaries that were paid for never reaching disk.
+        self._cache_dirty = False
 
     # ── cache ────────────────────────────────────────────────────────────────
 
@@ -201,6 +206,7 @@ class Summarizer:
             "title": title,
             "created": datetime.now(timezone.utc).isoformat(),
         }
+        self._cache_dirty = True
         return summary
 
     def summarize_many(self, jobs: list[tuple[str, str, str]]) -> list[str]:
@@ -210,6 +216,11 @@ class Summarizer:
         parent run — one copy per job, taken here, since a ``Context`` can only
         be entered by one thread at a time. The cache is saved once at the end
         rather than per call, so ten summaries cost one file write, not ten.
+
+        The save is gated on the dirty flag, not on ``api_calls``: that counter
+        is incremented from every worker without a lock, so it can undercount,
+        and a count that lands back on zero would drop the run's summaries.
+        The flag only ever goes one way, so no interleaving can clear it.
         """
         if not jobs:
             return []
@@ -220,7 +231,7 @@ class Summarizer:
                 pool.map(lambda c, j: c.run(self.summarize, *j), contexts, jobs)
             )
 
-        if self.api_calls:
+        if self._cache_dirty:
             self._save_cache()
         logger.info(
             "Summarized %d articles (%d new, %d cached, %d failed)",
