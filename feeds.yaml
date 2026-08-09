@@ -101,7 +101,9 @@ themes:
     - name: NHC Atlantic
       url: https://www.nhc.noaa.gov/index-at.xml
     - name: WLRN Local News
-      url: https://www.wlrn.org/local-news.rss
+      # Moved under /tags/ — the old /local-news.rss 404s, and the site-wide
+      # /index.rss the homepage advertises parses to zero entries.
+      url: https://www.wlrn.org/tags/local-news.rss
     - name: Miami New Times
       url: https://www.miaminewtimes.com/miami/Rss.xml
     - name: NBC6 Miami
