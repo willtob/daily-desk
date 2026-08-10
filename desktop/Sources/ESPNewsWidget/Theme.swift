@@ -132,26 +132,42 @@ struct AreaStyle {
     let label: String
     let tint: Color
 
+    /// In `interests.yaml` order, so a diff of one lines up against the other.
     private static let table: [String: AreaStyle] = [
-        "ai_open_source":     AreaStyle(label: "OPEN SRC", tint: Color(hex: 0xFEE182)),
-        "ai_consciousness":   AreaStyle(label: "INTERP",   tint: Color(hex: 0xF6B759)),
-        "classic_ml_applied": AreaStyle(label: "CLASSIC",  tint: Color(hex: 0x9AD7FC)),
-        "big_tech_career":    AreaStyle(label: "BIG TECH", tint: Color(hex: 0x76ACDE)),
-        "embedded_wearables": AreaStyle(label: "EMBEDDED", tint: Color(hex: 0xF6AA4B)),
-        "startup_vc":         AreaStyle(label: "STARTUP",  tint: Color(hex: 0xFDD271)),
-        "florida":            AreaStyle(label: "FLORIDA",  tint: Color(hex: 0xE48142)),
-        "spain":              AreaStyle(label: "SPAIN",    tint: Color(hex: 0xD6683F)),
-        "barcelona_dates":    AreaStyle(label: "BCN PLAN", tint: Color(hex: 0xEE9B85)),
+        "ai_open_source":      AreaStyle(label: "OPEN SRC", tint: Color(hex: 0xFEE182)),
+        "agentic_tooling":     AreaStyle(label: "AGENTS",   tint: Color(hex: 0xB6D7A8)),
+        "ai_consciousness":    AreaStyle(label: "INTERP",   tint: Color(hex: 0xF6B759)),
+        "model_architectures": AreaStyle(label: "ARCH",     tint: Color(hex: 0x9AD7FC)),
+        "edge_inference":      AreaStyle(label: "EDGE ML",  tint: Color(hex: 0x8CC8B4)),
+        "embedded_wearables":  AreaStyle(label: "EMBEDDED", tint: Color(hex: 0xF6AA4B)),
+        "tech_careers":        AreaStyle(label: "CAREERS",  tint: Color(hex: 0x76ACDE)),
+        "startup_vc":          AreaStyle(label: "STARTUP",  tint: Color(hex: 0xFDD271)),
+        "florida":             AreaStyle(label: "FLORIDA",  tint: Color(hex: 0xE48142)),
+        "spain":               AreaStyle(label: "SPAIN",    tint: Color(hex: 0xD6683F)),
+        "barcelona_dates":     AreaStyle(label: "BCN PLAN", tint: Color(hex: 0xEE9B85)),
+        "deep_reads":          AreaStyle(label: "PAPERS",   tint: Color(hex: 0xC9BFE0)),
     ]
 
-    /// The wildcard overrides its area entirely. The table above is warm end to
-    /// end, so the one card that matched nothing is the one cool card in the
-    /// deck — legible as "different kind of thing" before the badge is read.
+    /// The wildcard overrides its area entirely, and is the most desaturated
+    /// thing on the deck so it reads as "different kind of thing" before the
+    /// badge is legible.
+    ///
+    /// This used to say the table above was warm end to end and the wildcard was
+    /// the only cool card. That stopped being true well before the table grew:
+    /// `model_architectures` and `tech_careers` have been blue since the palette
+    /// moved to the wallpaper's. What actually separates the wildcard now is
+    /// saturation, not hue.
     private static let wildcard = AreaStyle(label: "WILDCARD", tint: Color(hex: 0xC3D4E2))
 
     /// The wallpaper's near-white. An unknown area gets a neutral card rather
     /// than vanishing, so a new area in interests.yaml shows up as un-styled
     /// instead of as a blank.
+    ///
+    /// Degrading gracefully is not the same as degrading invisibly. Renaming
+    /// three areas and adding three more in interests.yaml without touching this
+    /// table put most of a digest behind this one badge, and the deck read as a
+    /// wall of grey NEWS cards. If several cards are labelled NEWS at once, this
+    /// table is stale — that is the symptom, and it is the only one.
     private static let fallback = AreaStyle(label: "NEWS", tint: Color(hex: 0xE6EEF3))
 
     static func forArea(_ area: String?) -> AreaStyle {

@@ -71,9 +71,17 @@ void news_client_request_rebuild(void)
     else news_rebuilding = false;
 }
 
-/* Representative content: long and short titles, every interest area, an
- * accented Spanish entry, and one summary-less article — the cases that
- * actually break layout.
+/* Representative content: long and short titles, an accented Spanish entry,
+ * and one summary-less article — the cases that actually break layout.
+ *
+ * This used to say "every interest area", and that is no longer possible:
+ * interests.yaml carries twelve areas, NEWS_MAX_ARTICLES is twelve, and every
+ * slot below is already paying for a layout case or the unknown-area fallback.
+ * The layout cases win the tie — a badge is a short uppercase string and the
+ * widest of them (OPEN SRC, EMBEDDED, BCN PLAN, WILDCARD, all 8 characters)
+ * are covered here, so an area missing from this fixture cannot break anything
+ * that the ones present do not already exercise. agentic_tooling,
+ * model_architectures and deep_reads are the three currently unrepresented.
  *
  * The first two summaries are real Phase 9 output at full length (~800 chars),
  * because that is now the common case and it is the one that decides whether
@@ -121,7 +129,7 @@ void news_client_init(void)
           "with a repository page. The tag identifying the base model it descended from "
           "is a string the uploader typed." },
         { "Running a 28.9M parameter LLM on an $8 microcontroller",
-          "Hackaday", "classic_ml_applied", 0.5220f, false,
+          "Hackaday", "edge_inference", 0.5220f, false,
           "A demonstration of quantized inference on constrained hardware, with the "
           "full memory budget broken down layer by layer." },
         { "AI #179 Part 1: A Louder Fire Alarm for General Intelligence",
@@ -129,9 +137,10 @@ void news_client_init(void)
           "Coverage of the week's model releases, the system card, and the model "
           "welfare discussion that followed." },
         { "Short title", "NBC6 Miami", "florida", 0.4400f, false, "" },
-        { "Meta engineering on how the build system scales to a monorepo",
-          "Meta Engineering", "big_tech_career", 0.4310f, false,
-          "An account of incremental build graphs and the caching layer underneath." },
+        { "What I wish I had known at twenty about working in tech",
+          "Pragmatic Engineer", "tech_careers", 0.4310f, false,
+          "Levelling, comp bands, and the difference between the job as advertised "
+          "and the job as done." },
         { "New low power microcontroller with e-ink support and a tiny footprint",
           "CNX Software", "embedded_wearables", 0.4120f, false,
           "Datasheet highlights, power figures in deep sleep, and the dev board price." },
@@ -147,11 +156,19 @@ void news_client_init(void)
          * Its area is deliberately one already on the deck, because the badge
          * has to come from the wildcard flag rather than from the area being
          * unrecognised — that is the case that regressed when the two were
-         * conflated. */
+         * conflated.
+         *
+         * The score is mid-pack, not bottom. It used to be 0.1661, from when the
+         * wildcard was drawn from the bottom quarter; the draw is now the 40th to
+         * 70th percentile, so on a real digest this card lands under the ranked
+         * ten but nowhere near the floor. That difference is visible rather than
+         * academic — at 0.1661 the score bar renders as the minimum sliver, which
+         * is the one reading the wildcard should not have. */
         { "A 1970s synthesiser restored with a logic analyser and a lot of patience",
-          "Hackaday", "embedded_wearables", 0.1661f, true,
-          "The wildcard slot: picked from the bottom of the scores on purpose, so "
-          "the digest carries one thing the interest profile did not ask for." },
+          "Hackaday", "embedded_wearables", 0.4044f, true,
+          "The wildcard slot: drawn at random from the middle of the ranking on "
+          "purpose, so the digest carries one thing the interest profile did not "
+          "ask for." },
     };
 
     int n = (int)(sizeof(s) / sizeof(s[0]));

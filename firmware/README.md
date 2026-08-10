@@ -226,22 +226,37 @@ Polling interval is 15 min (`NEWS_REFRESH_INTERVAL_MS`).
 
 | area | badge | colour |
 |---|---|---|
-| `ai_open_source` | OPEN SRC | green |
-| `ai_consciousness` | INTERP | purple |
-| `classic_ml_applied` | CLASSIC | teal |
-| `big_tech_career` | BIG TECH | blue |
-| `embedded_wearables` | EMBEDDED | orange |
-| `startup_vc` | STARTUP | yellow |
-| `florida` | FLORIDA | coral |
-| `spain` | SPAIN | pink |
-| `barcelona_dates` | BCN PLAN | rose |
+| `ai_open_source` | OPEN SRC | pale yellow |
+| `agentic_tooling` | AGENTS | sage |
+| `ai_consciousness` | INTERP | amber |
+| `model_architectures` | ARCH | light blue |
+| `edge_inference` | EDGE ML | green-teal |
+| `embedded_wearables` | EMBEDDED | orange-amber |
+| `tech_careers` | CAREERS | blue |
+| `startup_vc` | STARTUP | gold |
+| `florida` | FLORIDA | orange |
+| `spain` | SPAIN | dark coral |
+| `barcelona_dates` | BCN PLAN | salmon |
+| `deep_reads` | PAPERS | lavender |
+
+The colour names above are the wallpaper palette the widget and the device
+share. They previously read green/purple/teal, which described the old
+pomodoro-family badge colours and had been wrong since the card started being
+painted in the tint rather than just the badge.
 
 An unrecognised area falls back to a grey `NEWS` badge, so adding an area to
 `interests.yaml` degrades gracefully instead of breaking the display. To give
-it real styling, add a row to `AREA_STYLES[]` in `src/news_ui.cpp`.
+it real styling, add a row to `AREA_STYLES[]` in `src/news_ui.cpp` **and** to
+`AreaStyle.table` in `desktop/Sources/ESPNewsWidget/Theme.swift`.
+
+Graceful is not the same as visible: renaming or adding areas without updating
+both tables puts most of a digest behind that one badge, and the deck reads as
+a wall of grey `NEWS` cards. Several `NEWS` badges at once is the symptom of a
+stale table, and it is the only one.
 
 `wildcard: true` on an article overrides all of that: the backend appends one
-deliberately low-scoring story to every digest, and it gets the `WILDCARD` badge
+mid-ranked story to every digest — drawn at random from the 40th–70th percentile
+of the scores, not chosen by them — and it gets the `WILDCARD` badge
 and the one cool tint on the deck whatever its area says. Use `article_style()`
 rather than `area_style()` anywhere a whole article is in hand — that is the
 only function that knows the flag outranks the area.

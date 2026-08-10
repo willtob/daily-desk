@@ -305,28 +305,43 @@ typedef struct {
     uint32_t    color;
 } area_style_t;
 
+/* In interests.yaml order, so a diff of one lines up against the other. Labels
+ * are capped at 8 characters by the badge column at 140 px. */
 static const area_style_t AREA_STYLES[] = {
-    { "ai_open_source",     "OPEN SRC", 0xFEE182 },
-    { "ai_consciousness",   "INTERP",   0xF6B759 },
-    { "classic_ml_applied", "CLASSIC",  0x9AD7FC },
-    { "big_tech_career",    "BIG TECH", 0x76ACDE },
-    { "embedded_wearables", "EMBEDDED", 0xF6AA4B },
-    { "startup_vc",         "STARTUP",  0xFDD271 },
-    { "florida",            "FLORIDA",  0xE48142 },
-    { "spain",              "SPAIN",    0xD6683F },
-    { "barcelona_dates",    "BCN PLAN", 0xEE9B85 },
+    { "ai_open_source",      "OPEN SRC", 0xFEE182 },
+    { "agentic_tooling",     "AGENTS",   0xB6D7A8 },
+    { "ai_consciousness",    "INTERP",   0xF6B759 },
+    { "model_architectures", "ARCH",     0x9AD7FC },
+    { "edge_inference",      "EDGE ML",  0x8CC8B4 },
+    { "embedded_wearables",  "EMBEDDED", 0xF6AA4B },
+    { "tech_careers",        "CAREERS",  0x76ACDE },
+    { "startup_vc",          "STARTUP",  0xFDD271 },
+    { "florida",             "FLORIDA",  0xE48142 },
+    { "spain",               "SPAIN",    0xD6683F },
+    { "barcelona_dates",     "BCN PLAN", 0xEE9B85 },
+    { "deep_reads",          "PAPERS",   0xC9BFE0 },
 };
 #define AREA_STYLE_COUNT (sizeof(AREA_STYLES) / sizeof(AREA_STYLES[0]))
 
-/* The wildcard overrides its area entirely. The whole ramp above is warm, so
- * the one card that isn't a match for anything is the one cool card on the
- * deck — it reads as "different kind of thing" from across the desk, before
- * the badge is legible. */
+/* The wildcard overrides its area entirely, and is the most desaturated thing
+ * on the deck so it reads as "different kind of thing" from across the desk,
+ * before the badge is legible.
+ *
+ * This comment used to claim the ramp above was warm end to end and the
+ * wildcard was the only cool card. That stopped being true well before the
+ * table grew — model_architectures and tech_careers have been blue since the
+ * palette moved to the wallpaper's. Saturation is what separates it now. */
 static const area_style_t WILDCARD_STYLE = { "", "WILDCARD", 0xC3D4E2 };
 
 /* The wallpaper's near-white. An unknown area gets a neutral card rather than
  * vanishing, so a new area in interests.yaml shows up as un-styled instead of
- * as a blank. */
+ * as a blank.
+ *
+ * Degrading gracefully is not the same as degrading invisibly. Renaming three
+ * areas and adding three more in interests.yaml without touching AREA_STYLES
+ * put most of a digest behind this one badge, and the deck read as a wall of
+ * grey NEWS cards. Several NEWS badges at once means this table is stale —
+ * that is the symptom, and it is the only one. */
 static const area_style_t AREA_FALLBACK = { "", "NEWS", 0xE6EEF3 };
 
 static const area_style_t *area_style(const char *area)

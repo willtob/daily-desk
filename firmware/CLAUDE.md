@@ -654,7 +654,8 @@ GET  {base}/health          {"refreshing": bool, ...} — how the device knows i
 
 Field names match the Python `Article` model exactly, so the backend needs no
 translation layer. `wildcard` marks the exploration slot the backend appends
-last — one article picked *because* it scored badly — and it is the one field
+last — one article drawn at random from the middle of the ranking (the 40th–70th
+percentile), so it is picked *despite* the score rather than by it — and it is the one field
 that overrides `matched_area` for styling; see `article_style()`. It is absent
 from digests written before it existed, and parses as `false` there. Serve it with:
 
