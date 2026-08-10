@@ -10,6 +10,14 @@
 //      GET  /health          freshness, and whether a rebuild is running
 //      POST /refresh         start a pipeline run, returns 202 immediately
 //      GET  /audio/{i}.pcm   raw PCM narration of article i
+//      GET  /feedback        every like/dislike currently recorded
+//      POST /feedback        record a verdict, or clear one
+//
+//  The feedback half is specified in docs/feedback-api.md, which is the
+//  contract rather than a description of it. Two things there are load-bearing
+//  here: the endpoints are idempotent, so a retry after a timeout is safe; and
+//  clearing something unrated returns 200, so an undo fired twice is not an
+//  error to show anybody.
 //
 
 import Foundation
@@ -43,6 +51,21 @@ struct Digest: Decodable {
     let generated: String
     let count: Int
     let articles: [Article]
+}
+
+/// One recorded verdict, as `GET /feedback` lists them.
+///
+/// Only the two fields this app acts on are decoded. The record also carries
+/// the title, area, score and the embedded text, all of which the backend needs
+/// and none of which a thumb on a card does.
+struct VerdictRecord: Decodable {
+    let url: String
+    let verdict: String
+}
+
+struct VerdictList: Decodable {
+    let count: Int
+    let verdicts: [VerdictRecord]
 }
 
 struct Health: Decodable {
@@ -153,6 +176,47 @@ struct NewsClient {
     func requestRebuild() async throws {
         var req = URLRequest(url: baseURL.appendingPathComponent("refresh"))
         req.httpMethod = "POST"
+        _ = try await send(req)
+    }
+
+    // MARK: Feedback
+
+    /// Every recorded verdict, as `url -> "like" | "dislike"`.
+    ///
+    /// The stored article text is deliberately not requested (`include_text`
+    /// defaults to false server-side): it runs to a thousand characters a
+    /// record and nothing on this side reads it.
+    func fetchVerdicts() async throws -> [String: String] {
+        let data = try await get(baseURL.appendingPathComponent("feedback"))
+        let list = try JSONDecoder().decode(VerdictList.self, from: data)
+        return Dictionary(
+            list.verdicts.map { ($0.url, $0.verdict) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+    }
+
+    /// Record `like` or `dislike` for an article. Idempotent — sending the same
+    /// verdict twice leaves one verdict, so a retry is always safe.
+    func setVerdict(url: String, verdict: String) async throws {
+        try await postFeedback(url: url, verdict: verdict)
+    }
+
+    /// Remove whatever verdict an article has.
+    ///
+    /// `POST … "clear"` rather than `DELETE`, though the backend accepts both.
+    /// One method means one code path for the optimistic update to fail down,
+    /// and the firmware — which may get this gesture later — only speaks POST.
+    func clearVerdict(url: String) async throws {
+        try await postFeedback(url: url, verdict: "clear")
+    }
+
+    private func postFeedback(url: String, verdict: String) async throws {
+        var req = URLRequest(url: baseURL.appendingPathComponent("feedback"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(
+            withJSONObject: ["url": url, "verdict": verdict]
+        )
         _ = try await send(req)
     }
 

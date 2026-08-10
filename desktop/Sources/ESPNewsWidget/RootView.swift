@@ -17,6 +17,7 @@ struct RootView: View {
     @ObservedObject var controller: PanelController
     @StateObject private var audio = AudioPlayer()
     @StateObject private var pager = TrackpadPager()
+    @StateObject private var feedback = FeedbackStore()
 
     /// Monotonic deck position — see DeckView. Not an index into `articles`.
     @State private var position = 0
@@ -72,18 +73,15 @@ struct RootView: View {
             RoundedRectangle(cornerRadius: Theme.shellRadius, style: .continuous)
                 .stroke(Color.white.opacity(0.07), lineWidth: 1)
         )
-        // Drag from anywhere, the way it did when AppKit was moving the
-        // window — but as a gesture, so clicks still reach the deck.
-        //
-        // minimumDistance is what keeps the two apart: a click that never
-        // moves 6 points is a click, and the card's own tap gesture wins it
-        // because a child's gesture takes priority over a parent's.
-        .gesture(
-            DragGesture(minimumDistance: 6)
-                .onChanged { _ in controller.dragChanged() }
-                .onEnded   { _ in controller.dragEnded() }
-        )
         .task { store.startPolling() }
+        // Verdicts recorded on another client — or in an earlier session —
+        // belong on the cards as soon as they are drawn.
+        .task { await feedback.load(using: store.client) }
+        // A poll can replace the deck wholesale; re-reading is cheap and keeps
+        // a story that gained a verdict elsewhere from showing up unrated.
+        .onChange(of: store.articles) {
+            Task { await feedback.load(using: store.client) }
+        }
         // Two fingers sideways flips the deck, and walks stories when one is
         // open — the same thing the arrow keys and the nav buttons do, so
         // there is one idea of what "next" means rather than three.
@@ -139,7 +137,9 @@ struct RootView: View {
             index: index,
             client: store.client,
             onBack: close,
-            audio: audio
+            audio: audio,
+            feedback: feedback,
+            panel: controller
         )
         .frame(width: panel.width, height: panel.height, alignment: .topLeading)
         .frame(width: target.width, height: target.height, alignment: .topLeading)
@@ -174,6 +174,11 @@ struct RootView: View {
         .padding(.horizontal, Theme.pad)
         .frame(height: Theme.headerH)
         .contentShape(Rectangle())
+        // The header is the title bar. A borderless window has none, so this
+        // strip is it: the one place a drag moves the panel rather than doing
+        // something to a story. The refresh button inside it still takes its
+        // own clicks — a Button's gesture outranks one on an ancestor.
+        .gesture(controller.dragGesture())
         .contextMenu { headerMenu }
     }
 
@@ -224,7 +229,10 @@ struct RootView: View {
         if store.articles.isEmpty {
             emptyState
         } else {
-            DeckView(articles: store.articles, position: position) { index in
+            DeckView(articles: store.articles,
+                     position: position,
+                     feedback: feedback,
+                     client: store.client) { index in
                 open(index)
             }
             .padding(.horizontal, Theme.pad)

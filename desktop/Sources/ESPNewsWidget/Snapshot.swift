@@ -42,11 +42,22 @@ enum Snapshot {
         let client = NewsClient(baseURL: baseURL)
         var ok = true
 
+        // A live badge, not the inert one. The pull is the part of this UI most
+        // worth looking at without launching anything: set ESP_NEWS_SLIME to
+        // freeze every badge mid-pull and the blob renders into these files at
+        // whatever travel is being tuned. The seeded verdicts are so the marks
+        // that a pull leaves behind are on screen too.
+        let feedback = FeedbackStore()
+        feedback.seed(Dictionary(uniqueKeysWithValues: zip(
+            articles.prefix(2).map(\.url), [FeedbackStore.Verdict.like, .dislike]
+        )))
+
         // Three positions: the tints and the peek stack change under you as
         // the deck advances, and only the first card is checkable from one.
         for position in 0..<3 {
             let view = shell(position: position, count: articles.count) {
-                DeckView(articles: articles, position: position, onOpen: { _ in })
+                DeckView(articles: articles, position: position,
+                         feedback: feedback, client: client, onOpen: { _ in })
                     .padding(.horizontal, Theme.pad)
                     .padding(.bottom, 2)
             }
@@ -63,7 +74,9 @@ enum Snapshot {
         for (n, article) in articles.prefix(2).enumerated() {
             let detail = shellRaw(fixedHeight: false) {
                 DetailView(article: article, index: n, client: client,
-                           onBack: {}, audio: AudioPlayer(), scrollable: false)
+                           onBack: {}, audio: AudioPlayer(),
+                           feedback: feedback, panel: PanelController(),
+                           scrollable: false)
             }
             let name = n == 0 ? "detail.png" : "detail-\(n).png"
             ok = write(detail, to: dir.appendingPathComponent(name)) && ok
@@ -237,7 +250,7 @@ enum Snapshot {
             title: "Gradient boosting still wins on tabular data",
             summary: "A survey across 45 datasets finds trees ahead of transformers where rows beat pixels.",
             source: "arXiv",
-            matchedArea: "classic_ml_applied",
+            matchedArea: "model_architectures",
             score: 0.2680,
             url: "https://example.com/d"
         ),
@@ -254,10 +267,12 @@ enum Snapshot {
         // unrecognised. Same case the firmware simulator covers.
         Article(
             title: "A 1970s synthesiser restored with a logic analyser and a lot of patience",
-            summary: "The exploration slot: picked from the bottom of the scores on purpose, so the digest carries one thing the profile did not ask for.",
+            summary: "The exploration slot: drawn at random from the middle of the ranking on purpose, so the digest carries one thing the profile did not ask for.",
             source: "Hackaday",
             matchedArea: "embedded_wearables",
-            score: 0.1661,
+            // Mid-pack, matching the 40th-70th percentile band the backend now
+            // draws from. At the old 0.1661 the score bar was a bare sliver.
+            score: 0.4044,
             url: "https://example.com/f",
             wildcard: true
         ),

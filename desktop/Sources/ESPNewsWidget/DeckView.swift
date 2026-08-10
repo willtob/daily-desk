@@ -36,6 +36,8 @@ struct DeckView: View {
     let articles: [Article]
     /// Monotonic, not an index — see the note above. May go negative.
     let position: Int
+    var feedback: FeedbackStore?
+    var client: NewsClient?
     let onOpen: (Int) -> Void
 
     /// Cards drawn behind the top one. Three is where the stack stops reading
@@ -61,7 +63,13 @@ struct DeckView: View {
                     let article = articles[index]
                     let slot = p - position
 
-                    CardFace(article: article) { onOpen(index) }
+                    // Only the top card's badge is live. The peek cards already
+                    // have hit testing off, but passing the store down anyway
+                    // would have them reserve the mark slot and draw hearts on
+                    // stories you cannot reach.
+                    CardFace(article: article,
+                             feedback: slot == 0 ? feedback : nil,
+                             client: slot == 0 ? client : nil) { onOpen(index) }
                         .frame(width: geo.size.width, height: cardHeight(in: geo.size))
                         .modifier(Slot(slot: slot,
                                        tint: AreaStyle.forArticle(article).tint))
@@ -219,6 +227,9 @@ private struct Slot: ViewModifier {
 struct CardFace: View {
 
     let article: Article
+    /// Nil on the peek cards and in snapshots — see AreaBadge.
+    var feedback: FeedbackStore?
+    var client: NewsClient?
     let onOpen: () -> Void
 
     @State private var hovering = false
@@ -229,13 +240,7 @@ struct CardFace: View {
         VStack(alignment: .leading, spacing: 0) {
 
             HStack(alignment: .center, spacing: 6) {
-                Text(style.label)
-                    .font(.system(size: Theme.metaSize, weight: .bold))
-                    .tracking(Theme.metaTracking)
-                    .foregroundStyle(style.tint)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(Theme.ink))
+                AreaBadge(article: article, feedback: feedback, client: client)
 
                 Spacer(minLength: 4)
 
@@ -246,6 +251,10 @@ struct CardFace: View {
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                     .foregroundStyle(Theme.ink)
             }
+            // A downward pull hangs the blob over the headline. Draw order
+            // only — the row's size and position are untouched, and without
+            // this the blob would slide under the text it is passing.
+            .zIndex(1)
 
             Spacer(minLength: 10)
 

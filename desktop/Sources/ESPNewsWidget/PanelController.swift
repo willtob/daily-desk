@@ -116,6 +116,26 @@ final class PanelController: ObservableObject {
     // so feeding translation back in makes the widget chase the cursor and
     // skitter across the screen. Screen coordinates do not move under us.
 
+    /// The gesture that moves the panel, for whichever strip is acting as the
+    /// title bar.
+    ///
+    /// This used to live on RootView's whole body, so the widget could be
+    /// dragged from anywhere in it. That is a nice property for a thing with no
+    /// chrome and it cost too much: every gesture added inside the panel had to
+    /// win an argument with it, and the badge pull — a press and a vertical
+    /// drag, which is exactly what this is — lost that argument in real use even
+    /// with an explicit stand-down flag between them.
+    ///
+    /// Confining it to the header ends the class of problem rather than the one
+    /// instance. There is no arbitration left to get wrong: the two gestures no
+    /// longer overlap in space, and anything added to a card in future does not
+    /// have to know this exists.
+    func dragGesture() -> some Gesture {
+        DragGesture(minimumDistance: 6)
+            .onChanged { _ in self.dragChanged() }
+            .onEnded   { _ in self.dragEnded() }
+    }
+
     private var dragAnchor: (window: NSPoint, mouse: NSPoint)?
 
     func dragChanged() {
