@@ -79,6 +79,14 @@ def _render_article(article: Article) -> list[str]:
     ]
 
     why = f"{article.source} · **{article.score:.3f}**"
+    # What the like/dislike verdicts did to this article, when they did
+    # anything. The whole log exists to make a wrong-looking pick explainable,
+    # and "the profile chose this" and "a verdict of mine chose this" are the
+    # two answers it has to be able to tell apart.
+    if article.base_score is not None:
+        shift = (article.score or 0.0) - article.base_score
+        if abs(shift) >= 0.0005:
+            why += f" · feedback {shift:+.3f}"
     # For the wildcard the winning area is the closest the profile could get,
     # not a match, so name it as such rather than letting it read like a hit.
     if article.is_wildcard:

@@ -117,6 +117,39 @@ Planned separately. Notes so the design doesn't paint itself into a corner:
 - Dislikes are more informative per label than likes and much rarer. Consider
   weighting them higher.
 
+> **Status, 9 Aug 2026 — built.** `feedback.py` holds an append-only JSONL log
+> of verdicts; `POST/GET/DELETE /feedback` record and read them; the API
+> contract for client authors is `docs/feedback-api.md`. Scoring folds them into
+> the existing per-area arithmetic: likes are averaged into one extra reference
+> vector per area, dislikes become `avoid` vectors, both attached to the
+> article's `matched_area`. Every point below survived contact with the
+> measurement except one — see "the centroid does not do what it looks like".
+>
+> Two constants were sized against the live 271-article corpus rather than
+> guessed, both in `nodes/score.py`:
+>
+> - `LEARNED_MAX_SHIFT = 0.05` caps how far verdicts can move a score away from
+>   what `interests.yaml` said. Uncapped, **one** like measured a lift of 0.158
+>   and promoted seven articles onto the front page from as deep as rank 97.
+>   This is the anti-narrowing mechanism; nothing else in the design does that
+>   job.
+> - `LEARNED_AVOID_LAMBDA = 0.05`, against 0.15 for written phrases. The written
+>   value is wrong for article-length text: a phrase peaks at 0.477 against this
+>   corpus, an article hits 0.939 against its own near-duplicates, so 0.15 would
+>   be clipped flat by the cap and lose the difference between a duplicate and a
+>   cousin.
+>
+> **The centroid does not do what it looks like.** Averaging likes was expected
+> to dilute a single like's pull. Measured, the opposite: peak similarity to the
+> rest of the corpus *rises* with more likes (0.445 at one, 0.630 at eight),
+> because the mean of several articles is a better "generic article of this
+> area" vector than any one of them. It broadens rather than narrows, which is
+> wanted, but it is not a safety mechanism and should not be described as one.
+>
+> The wildcard is held out entirely: `base_score` carries the written-profile
+> score forward and `curate.py` draws the exploration slot from that ranking, so
+> verdicts cannot steer the one slot that exists to escape them.
+
 > **Related, 9 Aug 2026.** The *written* half of dislikes now exists: an optional
 > `avoid:` list per area in `interests.yaml`, scored as
 > `max(0, best_reference - 0.15 * best_avoid)` before the area weight. It is

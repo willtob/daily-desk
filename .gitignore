@@ -13,6 +13,9 @@ __pycache__/
 # Generated digests (Phase 5), the API payload (Phase 6), and the seen store
 digests/*.md
 digests/*.json
+# feedback.jsonl is deliberately NOT ignored. Unlike everything in this file it
+# does not regenerate — it is hand-made labelling, one tap at a time, and losing
+# it means starting over.
 # Cached TTS audio (Phase 8) — regenerates on demand, ~700 KB per article
 digests/audio/
 
