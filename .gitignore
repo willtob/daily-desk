@@ -18,3 +18,8 @@ digests/audio/
 
 # macOS
 .DS_Store
+
+# R console history. Nothing here is an R project; these appear because a
+# console was opened in a directory to look at something, and R writes one on
+# exit whether or not you asked. Unanchored, so it matches at any depth.
+.Rhistory
