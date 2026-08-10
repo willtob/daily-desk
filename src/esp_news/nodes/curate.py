@@ -27,12 +27,20 @@ logger = logging.getLogger(__name__)
 DEFAULT_TOP_N = 10
 DEFAULT_PER_AREA_CAP = 3
 
-# The wildcard is drawn from the worst-scoring quarter of everything that
-# cleared the filters, not from the single lowest score. The very bottom is
-# reliably the same kind of thing every day — a two-line sports result, a
-# weather bulletin — which is a bad match for the profile without being a new
-# topic. A quarter is wide enough that the pick moves around run to run.
-DEFAULT_WILDCARD_POOL = 0.25
+# The wildcard is drawn from a band in the middle of the ranking, given as
+# percentiles of the score distribution: the 40th to the 70th.
+#
+# It used to be the bottom quarter, on the theory that the furthest thing from
+# the profile was the most surprising. Ten digests said otherwise — the bottom
+# is reliably the same handful of shapes every day, a two-line sports result or
+# a weather bulletin, which is randomness without discovery. The pleasant
+# surprise lives mid-pack: adjacent to something I care about, but not central
+# enough to win a slot on its own. High enough to be about one of my topics,
+# low enough that the ranker was never going to show it to me.
+#
+# The band is wide enough that the pick genuinely moves run to run. It stays a
+# uniform random draw over that band — nothing here ranks or seeds it.
+DEFAULT_WILDCARD_BAND = (0.40, 0.70)
 
 # Articles with no summary are dropped from the front page. They score fine —
 # a rolling "Live updates: Today's South Florida news" index page is a perfect
@@ -47,25 +55,31 @@ def _pick_wildcard(
     ranked: list[Article],
     *,
     exclude: set[str],
-    pool: float = DEFAULT_WILDCARD_POOL,
+    band: tuple[float, float] = DEFAULT_WILDCARD_BAND,
     rng: random.Random | None = None,
 ) -> Article | None:
-    """One article from the bottom of ``ranked``, flagged as the wildcard.
+    """One article from the middle of ``ranked``, flagged as the wildcard.
 
-    ``ranked`` is best-first and already filtered, so the tail is genuinely
-    off-profile rather than merely unread. Returns None when everything left
-    is already on the front page, which is what a thin corpus looks like.
+    ``ranked`` is best-first and already filtered. ``band`` is a pair of score
+    percentiles, low first, so ``(0.40, 0.70)`` means "somewhere between the
+    40th and the 70th percentile". Returns None when everything left is already
+    on the front page, which is what a thin corpus looks like.
     """
     candidates = [a for a in ranked if a.url not in exclude]
     if not candidates:
         return None
 
-    # At least one candidate however small the corpus, and never so wide a pool
-    # that it starts overlapping the stories that actually made the page.
-    depth = max(1, min(len(candidates), round(len(candidates) * pool)))
-    bottom = candidates[-depth:]
+    # Percentiles count up from the worst article; ``candidates`` counts down
+    # from the best. The 70th percentile is therefore 30% of the way in from the
+    # front, and the 40th is 60% of the way in — so the high percentile gives
+    # the slice's start and the low one gives its end.
+    low, high = band
+    n = len(candidates)
+    start = min(n - 1, round(n * (1.0 - high)))
+    stop = max(start + 1, round(n * (1.0 - low)))
+    middle = candidates[start:stop]
 
-    chosen = (rng or random).choice(bottom)
+    chosen = (rng or random).choice(middle)
     return chosen.model_copy(update={"is_wildcard": True})
 
 
@@ -78,7 +92,7 @@ def curate_articles(
     seen: SeenStore | None = None,
     min_summary_chars: int = DEFAULT_MIN_SUMMARY_CHARS,
     wildcard: bool = True,
-    wildcard_pool: float = DEFAULT_WILDCARD_POOL,
+    wildcard_band: tuple[float, float] = DEFAULT_WILDCARD_BAND,
     rng: random.Random | None = None,
 ) -> list[Article]:
     """Rank, filter and cap scored articles down to the digest's front page.
@@ -89,11 +103,12 @@ def curate_articles(
     Returned articles are ordered best-scoring first — grouping for
     readability happens at render time.
 
-    ``wildcard`` appends one deliberately low-scoring article after the ranked
-    page, flagged with ``is_wildcard``. It is the only article here that isn't
-    chosen by the fitness function, and that's the point: the profile can only
-    return more of what it already knows about, so the digest needs one slot it
-    doesn't control. Pass ``rng`` to make the pick reproducible.
+    ``wildcard`` appends one mid-ranked article after the ranked page, flagged
+    with ``is_wildcard``. It is the only article here that isn't chosen by the
+    fitness function, and that's the point: the profile can only return more of
+    what it already knows about, so the digest needs one slot it doesn't
+    control. ``wildcard_band`` is the pair of score percentiles it is drawn
+    from. Pass ``rng`` to make the pick reproducible.
     """
     if not scored:
         logger.info("No articles to curate")
@@ -164,7 +179,7 @@ def curate_articles(
     # 4. The exploration slot — appended after the sort, so it stays last
     #    however badly (or well) it happens to have scored.
     if wildcard:
-        pick = _pick_wildcard(ranked, exclude=picked_urls, pool=wildcard_pool, rng=rng)
+        pick = _pick_wildcard(ranked, exclude=picked_urls, band=wildcard_band, rng=rng)
         if pick is not None:
             picked.append(pick)
             area_counts[pick.matched_area or "unscored"] += 1

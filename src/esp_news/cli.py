@@ -252,7 +252,7 @@ def curate_main() -> None:
         print(f"  {rank:>2}.{marker}{art.score:.4f} [{art.matched_area:<18}] "
               f"{art.source[:18]:<18} {art.title[:52]}")
     if any(a.is_wildcard for a in curated):
-        print("\n  (* wildcard — picked from the bottom quartile, not by score)")
+        print("\n  (* wildcard — drawn at random from mid-pack, not by score)")
 
     print("\n  areas represented:")
     for area, count in Counter(a.matched_area for a in curated).most_common():

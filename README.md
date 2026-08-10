@@ -106,14 +106,16 @@ digest are recorded, and only after the file is written — a crash mid-run can'
 silently suppress them from the next one. Use `--no-seen` to ignore it.
 
 **The wildcard.** After the ranked page, the digest carries one extra article
-picked *because* it scored badly — its own `## wildcard` section at the end of
+that was *not* picked by score — its own `## wildcard` section at the end of
 the markdown, last in the JSON, and a cool-tinted `WILDCARD` card on the device
 and the widget. The profile is a fitness function, so left alone it can only
 ever return more of what it already matches; this is the one slot it doesn't
-control. It's drawn at random from the worst-scoring quarter of everything that
-cleared the filters rather than from the very bottom — the absolute floor is the
-same kind of thing every day (a two-line sports result, a weather bulletin),
-which is off-profile without being a new topic. `--no-wildcard` turns it off.
+control. It's drawn uniformly at random from the 40th–70th percentile of the
+score distribution — mid-pack, adjacent to something in the profile but not
+central enough to win a slot. The bottom quartile, which this used to draw from,
+turned out to be the same handful of shapes every day (a two-line sports result,
+a weather bulletin): random without being a discovery. `--no-wildcard` turns it
+off.
 
 Each entry carries a why-it-scored line — winning area, score, and runner-up.
 That's what makes the digest log useful for tuning `interests.yaml`: when a

@@ -170,8 +170,9 @@ def render_digest(
         lines += [
             "## wildcard",
             "",
-            "*Picked from the bottom of the pile on purpose — the profile can "
-            "only ever hand back more of what it already knows about.*",
+            "*Drawn at random from the middle of the pile on purpose — the "
+            "profile can only ever hand back more of what it already knows "
+            "about.*",
             "",
         ]
         for art in wildcards:
