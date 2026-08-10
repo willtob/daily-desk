@@ -137,3 +137,63 @@ def test_a_failed_summary_alone_does_not_dirty_the_cache(summarizer_factory):
     assert summaries == ["", ""]
     assert summarizer._cache_dirty is False
     assert not summarizer_factory.cache_path.exists()
+
+
+def test_bumping_the_prompt_version_stops_the_old_summaries_being_served(
+    summarizer_factory, monkeypatch
+):
+    """A prompt change must invalidate what the previous prompt produced.
+
+    This is the discipline the PROMPT_VERSION comment describes, and it fails
+    silently when skipped: the run succeeds, the cache is hit, and the new
+    instructions never reach a single article. It bit the Catalan-to-English
+    change directly — the Catalan feeds had summaries cached in Catalan, and
+    without the bump the change would have looked like it did nothing.
+    """
+    first = summarizer_factory()
+    first.summarize_many(JOBS)
+    assert summarizer_factory.clients[0].responses.calls == len(JOBS)
+
+    monkeypatch.setattr("esp_news.summarize.PROMPT_VERSION", "999")
+
+    second = summarizer_factory()
+    second.summarize_many(JOBS)
+
+    assert second.cache_hits == 0, "stale summaries served under a changed prompt"
+    assert summarizer_factory.clients[1].responses.calls == len(JOBS)
+
+
+def test_catalan_is_summarized_in_english_and_other_languages_are_not(
+    summarizer_factory,
+):
+    """The instruction reaches the model, and is scoped to Catalan alone.
+
+    Asserting on the prompt rather than on a summary: the behaviour lives in an
+    LLM, so a test that called one would be measuring the model. What this can
+    pin down is that the rule is sent, and that it did not quietly widen into
+    "translate everything" — the Spanish feeds are the biggest contributors here
+    and their summaries are meant to stay in Spanish.
+    """
+    instructions = _instructions_sent(summarizer_factory)
+
+    assert "Catalan" in instructions
+    assert "write the summary in English" in instructions
+    # The fallback for every other language has to survive alongside it.
+    assert "same language as the article" in instructions
+    assert "Spanish" not in instructions
+
+
+def _instructions_sent(summarizer_factory) -> str:
+    """The system prompt the summarizer actually sends for one article."""
+    captured: dict[str, str] = {}
+
+    summarizer = summarizer_factory()
+    real_create = summarizer_factory.clients[0].responses.create
+
+    def spy(**kwargs):
+        captured["instructions"] = kwargs["instructions"]
+        return real_create(**kwargs)
+
+    summarizer_factory.clients[0].responses.create = spy
+    summarizer.summarize("Títol", "beteve Cultura", "cos de l'article " * 20)
+    return captured["instructions"]

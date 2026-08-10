@@ -52,7 +52,13 @@ _MAX_WORKERS = 6
 #    without paragraph breaks, so the readers still have to cope with a single
 #    unbroken block — they insert their own breaks when the text arrives with
 #    none. Do not remove that fallback on the strength of this prompt.
-PROMPT_VERSION = "2"
+# 3: Catalan articles are now summarized in English; every other language is
+#    still summarized in its own. The bump is the point rather than a formality
+#    — the Catalan feeds (betevé, Nació Digital) have summaries cached under 2
+#    that are written in Catalan, and without a new version they would keep
+#    being served and the change would look like it had done nothing. Spanish
+#    is deliberately not included: only Catalan was asked for.
+PROMPT_VERSION = "3"
 
 # The subset is deliberately two things wide, and the reasons are in
 # esp_news/markdown.py: this text is rendered by SwiftUI, by LVGL — which
@@ -88,7 +94,11 @@ versions, prices, dates, benchmark figures, and the outcome.
 makes a claim.
 - Use only what is in the supplied text. If the text does not say it, leave it out. \
 Do not speculate about what the article probably covers.
-- Write in the same language as the article.
+- If the article is written in Catalan, write the summary in English. Translate \
+the substance; do not leave Catalan sentences in it. Keep proper nouns in their \
+original form — place names, people, institutions and event names stay as they \
+are written (Gràcia, Sant Cugat, Festa Major, Rodalies, Generalitat).
+- Otherwise, write in the same language as the article.
 """
 
 
