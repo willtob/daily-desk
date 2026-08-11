@@ -8,6 +8,7 @@ from collections import Counter
 
 from esp_news.config import FeedsConfig, load_feeds_config
 from esp_news.embeddings import DEFAULT_CACHE_PATH, EmbeddingClient, MissingAPIKeyError
+from esp_news.feedback import FeedbackStore, index_digest
 from esp_news.graph import run_digest_graph
 from esp_news.interests import load_interests_profile
 from esp_news.models import Article
@@ -16,7 +17,9 @@ from esp_news.nodes.dedup import dedup_articles
 from esp_news.nodes.digest import digest_payload, write_digest, write_digest_json
 from esp_news.nodes.ingest import ingest_articles
 from esp_news.nodes.score import score_articles
+from esp_news.nodes.summarize import summarize_articles
 from esp_news.seen import SeenStore
+from esp_news.summarize import DEFAULT_SUMMARY_MODEL, DEFAULT_TARGET_CHARS, Summarizer
 from esp_news.tracing import init_tracing
 
 
@@ -33,6 +36,19 @@ def _base_parser(description: str) -> argparse.ArgumentParser:
         "--hours", type=int, default=None, help="Override the lookback window (hours)."
     )
     return parser
+
+
+def _add_feedback_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--no-feedback",
+        action="store_true",
+        help="Score from interests.yaml alone, ignoring recorded likes and "
+        "dislikes. The before half of a before/after comparison.",
+    )
+
+
+def _feedback_store(args: argparse.Namespace) -> FeedbackStore | None:
+    return None if getattr(args, "no_feedback", False) else FeedbackStore()
 
 
 def _load_and_ingest(args: argparse.Namespace) -> tuple[list[Article], FeedsConfig]:
@@ -131,6 +147,7 @@ def score_main() -> None:
         action="store_true",
         help="Bypass the embedding cache and re-embed everything.",
     )
+    _add_feedback_arg(parser)
     args = parser.parse_args()
 
     _configure_logging()
@@ -145,7 +162,9 @@ def score_main() -> None:
         cache_path=None if args.no_cache else DEFAULT_CACHE_PATH,
     )
     try:
-        scored = score_articles(articles, profile=profile, client=client)
+        scored = score_articles(
+            articles, profile=profile, client=client, feedback=_feedback_store(args)
+        )
     except MissingAPIKeyError as exc:
         raise SystemExit(f"\n{exc}")
 
@@ -195,6 +214,11 @@ def _add_curate_args(parser: argparse.ArgumentParser) -> None:
         default=1,
         help="Drop articles whose summary is shorter than this (0 = keep all).",
     )
+    parser.add_argument(
+        "--no-wildcard",
+        action="store_true",
+        help="Drop the mid-ranked exploration article from the end of the page.",
+    )
 
 
 def _build_client(profile, no_cache: bool) -> EmbeddingClient:
@@ -211,6 +235,7 @@ def curate_main() -> None:
     _add_curate_args(parser)
     parser.add_argument("--interests", default=None, help="Path to interests.yaml.")
     parser.add_argument("--no-cache", action="store_true", help="Bypass embed cache.")
+    _add_feedback_arg(parser)
     args = parser.parse_args()
 
     _configure_logging()
@@ -222,7 +247,10 @@ def curate_main() -> None:
 
     try:
         scored = score_articles(
-            deduped, profile=profile, client=_build_client(profile, args.no_cache)
+            deduped,
+            profile=profile,
+            client=_build_client(profile, args.no_cache),
+            feedback=_feedback_store(args),
         )
     except MissingAPIKeyError as exc:
         raise SystemExit(f"\n{exc}")
@@ -234,14 +262,18 @@ def curate_main() -> None:
         per_area_cap=args.per_area_cap,
         seen=seen,
         min_summary_chars=args.min_summary,
+        wildcard=not args.no_wildcard,
     )
 
     print("\n=== Front page ===")
     if not curated:
         raise SystemExit("  nothing cleared curation — try --no-seen or a wider --hours")
     for rank, art in enumerate(curated, 1):
-        print(f"  {rank:>2}. {art.score:.4f} [{art.matched_area:<18}] "
+        marker = " *" if art.is_wildcard else "  "
+        print(f"  {rank:>2}.{marker}{art.score:.4f} [{art.matched_area:<18}] "
               f"{art.source[:18]:<18} {art.title[:52]}")
+    if any(a.is_wildcard for a in curated):
+        print("\n  (* wildcard — drawn at random from mid-pack, not by score)")
 
     print("\n  areas represented:")
     for area, count in Counter(a.matched_area for a in curated).most_common():
@@ -250,13 +282,106 @@ def curate_main() -> None:
         print(f"\n  (seen store holds {len(seen)} urls; not updated by this command)")
 
 
+def _add_summary_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--summary-model",
+        default=DEFAULT_SUMMARY_MODEL,
+        help=f"Model that writes the summaries (default {DEFAULT_SUMMARY_MODEL}).",
+    )
+    parser.add_argument(
+        "--target-chars",
+        type=int,
+        default=DEFAULT_TARGET_CHARS,
+        help=f"Summary length to aim for (default {DEFAULT_TARGET_CHARS}).",
+    )
+
+
+def summarize_main() -> None:
+    """Phase 9 checkpoint: are the LLM summaries actually better than the RSS ones?
+
+    Prints both, side by side, because that's the only question worth asking of
+    this node — and the failure mode to watch for is a confident summary of an
+    article that never got fetched.
+    """
+    parser = _base_parser("Phase 9 — fetch articles and write real summaries.")
+    _add_threshold_arg(parser)
+    _add_curate_args(parser)
+    _add_summary_args(parser)
+    parser.add_argument("--interests", default=None, help="Path to interests.yaml.")
+    parser.add_argument("--no-cache", action="store_true", help="Bypass embed cache.")
+    _add_feedback_arg(parser)
+    args = parser.parse_args()
+
+    _configure_logging()
+    init_tracing()
+
+    profile = load_interests_profile(args.interests)
+    raw, _ = _load_and_ingest(args)
+    deduped = dedup_articles(raw, similarity_threshold=args.threshold)
+
+    try:
+        scored = score_articles(
+            deduped,
+            profile=profile,
+            client=_build_client(profile, args.no_cache),
+            feedback=_feedback_store(args),
+        )
+        curated = curate_articles(
+            scored,
+            top_n=args.top,
+            per_area_cap=args.per_area_cap,
+            seen=None if args.no_seen else SeenStore(),
+            min_summary_chars=args.min_summary,
+            wildcard=not args.no_wildcard,
+        )
+        summarized = summarize_articles(
+            curated,
+            summarizer=Summarizer(
+                model=args.summary_model, target_chars=args.target_chars
+            ),
+        )
+    except MissingAPIKeyError as exc:
+        raise SystemExit(f"\n{exc}")
+
+    if not summarized:
+        raise SystemExit("\nNothing cleared curation — try --no-seen or a wider --hours.")
+
+    print("\n=== RSS summary vs. LLM summary ===")
+    for rank, art in enumerate(summarized, 1):
+        print(f"\n{rank:>2}. [{art.source}] {art.title[:76]}")
+        print(f"    source: {art.summary_source}")
+        print(f"    RSS ({len(art.summary):>4}): {art.summary[:200]}")
+        if art.long_summary:
+            print(f"    LLM ({len(art.long_summary):>4}): {art.long_summary}")
+
+    by_source = Counter(a.summary_source.split(":")[0] for a in summarized)
+    print("\n  outcome: " + ", ".join(f"{k}={v}" for k, v in by_source.most_common()))
+    fell_back = [a for a in summarized if a.summary_source.startswith("rss:")]
+    if fell_back:
+        print("  fell back to RSS:")
+        for art in fell_back:
+            print(f"    [{art.source}] {art.summary_source} — {art.title[:56]}")
+
+
 def digest_main() -> None:
     """Phase 5 checkpoint: run the whole graph and write a real digest."""
     parser = _base_parser("Phase 5 — run the full pipeline and write a digest.")
     _add_threshold_arg(parser)
     _add_curate_args(parser)
+    _add_summary_args(parser)
     parser.add_argument("--interests", default=None, help="Path to interests.yaml.")
     parser.add_argument("--no-cache", action="store_true", help="Bypass embed cache.")
+    parser.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="Skip the Phase 9 summarize step and use the raw RSS blurbs.",
+    )
+    parser.add_argument(
+        "--cached-feeds",
+        action="store_true",
+        help="Reuse the stored copy of each feed instead of fetching (no "
+        "network). For tuning interests.yaml; warns if the copies are stale.",
+    )
     parser.add_argument(
         "--out", default=None, help="Directory for the digest (default: digests/)."
     )
@@ -265,6 +390,7 @@ def digest_main() -> None:
         action="store_true",
         help="Print the digest without writing it or recording articles as seen.",
     )
+    _add_feedback_arg(parser)
     args = parser.parse_args()
 
     _configure_logging()
@@ -282,10 +408,17 @@ def digest_main() -> None:
             profile,
             client=_build_client(profile, args.no_cache),
             seen=seen,
+            feedback=_feedback_store(args),
+            summarizer=Summarizer(
+                model=args.summary_model, target_chars=args.target_chars
+            ),
+            use_llm_summary=not args.no_llm,
+            use_cached_feeds=args.cached_feeds,
             similarity_threshold=args.threshold,
             top_n=args.top,
             per_area_cap=args.per_area_cap,
             min_summary_chars=args.min_summary,
+            wildcard=not args.no_wildcard,
         )
     except MissingAPIKeyError as exc:
         raise SystemExit(f"\n{exc}")
@@ -303,6 +436,12 @@ def digest_main() -> None:
     )
     print(f"\nWritten to {path}")
     print(f"          {json_path}  (served by esp-serve)")
+
+    # Remember what each article *was*, so a like or dislike arriving later can
+    # be recorded against the text that was actually embedded. Nothing the
+    # client is shown carries that: digest.json holds the LLM summary, the
+    # scorer used the title plus the raw RSS blurb.
+    index_digest(state.curated_articles)
 
     # Only record what actually made the digest, and only after it's on disk —
     # a crash mid-run must not silently suppress articles from the next one.
@@ -332,7 +471,8 @@ def serve_main() -> None:
     import uvicorn
 
     print(f"\n  Point the firmware's NEWS_URL at:  http://<this-mac-lan-ip>:{args.port}/digest.json")
-    print(f"  Endpoints: /digest.json  /digest.md  /health  POST /refresh\n")
+    print(f"  Endpoints: /digest.json  /digest.md  /health  POST /refresh")
+    print(f"  Learning:  /learn/topic  /learn/stats  POST /learn/session/start  /learn/grade\n")
     uvicorn.run("esp_news.api:app", host=args.host, port=args.port, reload=args.reload)
 
 

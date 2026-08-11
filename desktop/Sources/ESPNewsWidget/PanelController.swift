@@ -116,6 +116,26 @@ final class PanelController: ObservableObject {
     // so feeding translation back in makes the widget chase the cursor and
     // skitter across the screen. Screen coordinates do not move under us.
 
+    /// The gesture that moves the panel, for whichever strip is acting as the
+    /// title bar.
+    ///
+    /// This used to live on RootView's whole body, so the widget could be
+    /// dragged from anywhere in it. That is a nice property for a thing with no
+    /// chrome and it cost too much: every gesture added inside the panel had to
+    /// win an argument with it, and the badge pull — a press and a vertical
+    /// drag, which is exactly what this is — lost that argument in real use even
+    /// with an explicit stand-down flag between them.
+    ///
+    /// Confining it to the header ends the class of problem rather than the one
+    /// instance. There is no arbitration left to get wrong: the two gestures no
+    /// longer overlap in space, and anything added to a card in future does not
+    /// have to know this exists.
+    func dragGesture() -> some Gesture {
+        DragGesture(minimumDistance: 6)
+            .onChanged { _ in self.dragChanged() }
+            .onEnded   { _ in self.dragEnded() }
+    }
+
     private var dragAnchor: (window: NSPoint, mouse: NSPoint)?
 
     func dragChanged() {
@@ -133,10 +153,60 @@ final class PanelController: ObservableObject {
 
     func dragEnded() {
         dragAnchor = nil
+        guard let panel else { return }
+
+        snapToEdges(panel)
+
         // setFrameOrigin does not trigger the autosave that a user-driven
         // move would, so the position has to be written explicitly or it is
         // forgotten on the next launch.
-        guard let panel, !panel.frameAutosaveName.isEmpty else { return }
+        guard !panel.frameAutosaveName.isEmpty else { return }
         panel.saveFrame(usingName: panel.frameAutosaveName)
+    }
+
+    // MARK: - Snapping
+    //
+    // Desktop widgets line up. Dropped by hand a panel lands three or four
+    // points off whatever is next to it, which is exactly far enough to look
+    // like a mistake and not far enough to be worth nudging.
+    //
+    // The snap is to `visibleFrame`, not `frame`: that excludes the menu bar
+    // and the Dock, so "top right" means below the menu bar rather than under
+    // it, and a panel snapped to the bottom of a screen with a Dock does not
+    // end up behind it.
+
+    /// How close an edge has to be before it grabs, and the gap it leaves.
+    private static let snapDistance: CGFloat = 18
+    private static let snapMargin:   CGFloat = 20
+
+    private func snapToEdges(_ panel: NSPanel) {
+        // The screen the panel is mostly on, not the one with the mouse — the
+        // cursor may already have left it by the time the drag ends.
+        let screens = NSScreen.screens
+        guard let screen = screens.max(by: { a, b in
+            overlap(panel.frame, a.visibleFrame) < overlap(panel.frame, b.visibleFrame)
+        }) ?? NSScreen.main else { return }
+
+        let area = screen.visibleFrame
+        var origin = panel.frame.origin
+        let size = panel.frame.size
+
+        let left   = area.minX + Self.snapMargin
+        let right  = area.maxX - size.width  - Self.snapMargin
+        let bottom = area.minY + Self.snapMargin
+        let top    = area.maxY - size.height - Self.snapMargin
+
+        if abs(origin.x - left)  < Self.snapDistance { origin.x = left }
+        if abs(origin.x - right) < Self.snapDistance { origin.x = right }
+        if abs(origin.y - bottom) < Self.snapDistance { origin.y = bottom }
+        if abs(origin.y - top)    < Self.snapDistance { origin.y = top }
+
+        guard origin != panel.frame.origin else { return }
+        panel.setFrameOrigin(origin)
+    }
+
+    private func overlap(_ a: NSRect, _ b: NSRect) -> CGFloat {
+        let r = a.intersection(b)
+        return r.isNull ? 0 : r.width * r.height
     }
 }

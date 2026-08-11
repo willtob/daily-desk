@@ -16,6 +16,7 @@ press from the device — see [When the feeds actually update](#when-the-feeds-a
 - [x] Phase 4 — curate
 - [x] Phase 5 — digest output (v1 complete)
 - [x] Phase 6 — FastAPI endpoint serving the digest to the ESP32
+- [x] Phase 9 — fetch the real article and write a proper summary with an LLM
 
 ## Setup
 Requires [uv](https://docs.astral.sh/uv/).
@@ -26,9 +27,15 @@ cp .env.example .env   # then add your keys
 ```
 
 ## Feeds
-37 feeds are configured in [feeds.yaml](feeds.yaml), grouped into 9 themes:
+42 feeds are configured in [feeds.yaml](feeds.yaml), grouped into 10 themes:
 `embedded_wearables`, `big_tech`, `startup_vc`, `ai`, `ai_research`, `ml_applied`,
-`eng_blogs`, `florida`, `spain`. Edit freely.
+`eng_blogs`, `florida`, `barcelona_dates`, `spain`. Edit freely.
+
+`barcelona_dates` is the what's-on half of Barcelona, separate from `spain`'s
+what-happened: Barcelona Secreta, Time Out, La Vanguardia's food section,
+Barcelona Cultura and betevé's weekend agenda. All five publish in Spanish or
+Catalan, which is why the matching interest area carries reference phrases in
+both.
 
 The theme is only a provenance tag — scoring happens against the interest areas in
 [interests.yaml](interests.yaml), and any feed can win on any area.
@@ -70,11 +77,13 @@ uv run esp-digest               # run the whole graph, print and write digests/<
 uv run esp-digest --dry-run     # print only — writes nothing, marks nothing as seen
 uv run esp-digest --top 15 --per-area-cap 4
 uv run esp-digest --no-seen     # allow articles from earlier digests to reappear
+uv run esp-digest --no-wildcard # drop the mid-ranked exploration article
+uv run esp-digest --no-feedback # score from interests.yaml alone, ignoring verdicts
 ```
 
 `esp-digest` is the v1 entry point: it runs the full LangGraph pipeline
-(`ingest → dedup → score → curate → digest`), prints the markdown, writes it to
-`digests/YYYY-MM-DD.md`, and records what it showed.
+(`ingest → dedup → score → curate → summarize → digest`), prints the markdown,
+writes it to `digests/YYYY-MM-DD.md`, and records what it showed.
 
 **Per-area cap.** A pure top-N by score would hand back a page of Barcelona
 city news most days — those papers simply publish more than the tech blogs. The
@@ -83,13 +92,79 @@ second pass backfills by score, so the cap shapes the page without shrinking it.
 
 **Cross-run suppression.** `digests/seen.json` remembers which articles have
 already appeared, keyed by canonical URL so a link that picks up tracking params
-still counts. Entries expire after 45 days. Only articles that actually made a
+still counts. Entries expire after 45 days.
+
+A URL is not always one article, though: Time Out's "what to do this weekend"
+and the papers' weekly agendas are rolling pages, one fixed URL re-dated every
+week with new content. So the check is URL *and* date — an article published
+after the day it was last shown counts as new again, which is what keeps a
+weekly roundup from appearing once and then being hidden for the whole
+retention window. A source that bumps its publish date on a copy-edit can
+re-show a story that way; requiring a later calendar day keeps that rare.
+
+Only articles that actually made a
 digest are recorded, and only after the file is written — a crash mid-run can't
 silently suppress them from the next one. Use `--no-seen` to ignore it.
+
+**The wildcard.** After the ranked page, the digest carries one extra article
+that was *not* picked by score — its own `## wildcard` section at the end of
+the markdown, last in the JSON, and a cool-tinted `WILDCARD` card on the device
+and the widget. The profile is a fitness function, so left alone it can only
+ever return more of what it already matches; this is the one slot it doesn't
+control. It's drawn uniformly at random from the 40th–70th percentile of the
+score distribution — mid-pack, adjacent to something in the profile but not
+central enough to win a slot. The bottom quartile, which this used to draw from,
+turned out to be the same handful of shapes every day (a two-line sports result,
+a weather bulletin): random without being a discovery. `--no-wildcard` turns it
+off.
 
 Each entry carries a why-it-scored line — winning area, score, and runner-up.
 That's what makes the digest log useful for tuning `interests.yaml`: when a
 story looks wrong, the line shows whether it won on the area you'd expect.
+
+## Running Phase 9 (real summaries)
+```bash
+uv run esp-summarize --no-seen        # RSS blurb vs. LLM summary, side by side
+uv run esp-summarize --target-chars 600
+uv run esp-digest --no-llm            # skip it — RSS blurbs, no fetch, no cost
+```
+
+What the feeds hand over is often not a summary. Hacker News ships
+`Article URL: … Points: 58 # Comments: 32`; publisher feeds ship a teaser cut
+mid-sentence to make you click. So this node **fetches the article itself** and
+has an LLM write the summary from the real text.
+
+It runs **after curate**, not before. Curate takes ~500 scored articles down to
+10; summarizing earlier would mean fetching and summarizing 500 pages to throw
+490 away. Scoring keeps using the cheap RSS text — it only needs enough signal
+to rank.
+
+Two rules keep it honest:
+
+- **No text, no summary.** If the fetch fails — paywall, 403, JS-only page —
+  the RSS summary stands. Expanding `Points: 58 # Comments: 32` into a
+  paragraph doesn't recover the article, it invents one. The exception is a
+  feed that already ships a full body in its RSS (Reddit selftext), which is
+  summarized directly; the 600-character floor is what stops that from quietly
+  re-admitting teasers.
+- **Some sources are exempt.** `NWS Florida Alerts` and `NHC Atlantic` publish
+  machine-generated alerts where the exact wording *is* the information.
+  Paraphrasing a flood warning can only lose the county name.
+
+Every entry in the markdown digest carries a `summary:` marker when it *isn't*
+a clean LLM summary — `rss:fetch-error:HTTPStatusError` (Adafruit blocks
+non-browser clients), `rss:thin:0` (a Reddit link post with no body),
+`llm:rss-body`, `exempt`. That's how a source silently going unfetchable
+becomes visible instead of just getting quietly worse.
+
+Two caches, both under `.cache/`: fetched page text (one file per URL) and the
+summaries themselves (keyed by model + prompt version + article text). Tuning
+the prompt therefore doesn't re-fetch, and re-running doesn't re-summarize.
+Bump `PROMPT_VERSION` in `summarize.py` when you change the instructions.
+
+Model defaults to `gpt-5.4-mini` via the Responses API at low reasoning effort;
+override with `--summary-model` or `ESP_NEWS_SUMMARY_MODEL`. A run costs a
+fraction of a cent and adds ~15 s cold, ~0 s warm.
 
 ## Running Phase 6 (serve to the ESP32)
 ```bash
@@ -103,6 +178,12 @@ uv run esp-serve --port 8010      # port 8000 is taken by Docker on this machine
 | `GET /digest.md` | today's markdown (falls back to the most recent) |
 | `GET /health` | freshness, age in hours, refresh status, last error |
 | `POST /refresh` | runs the pipeline in the background, returns `202` immediately |
+| `GET /feedback` | every current like/dislike, for rendering state |
+| `POST /feedback` | record a verdict, or clear one |
+| `DELETE /feedback` | clear a verdict — the same operation as `POST … "clear"` |
+
+The feedback endpoints have their own contract in
+[`docs/feedback-api.md`](docs/feedback-api.md), written for client authors.
 
 The server reads the last written digest instead of running the pipeline per
 request. A full run takes ~20–30 s and the firmware's HTTP client times out at
@@ -112,8 +193,11 @@ request. A full run takes ~20–30 s and the firmware's HTTP client times out at
 `latest.json` is written via a temp file and atomic rename, so a poll landing
 mid-write can't read a truncated payload.
 
-Defaults (`limit=12`, `max_summary=400`) match the firmware's fixed buffers in
-`news_client.h`, so the device never parses payload it would only discard.
+Defaults (`limit=12`, `max_summary=900`) match the firmware's fixed buffers in
+`news_client.h` (`NEWS_SUMMARY_LEN 960`), so the device never parses payload it
+would only discard. Both were raised from 400/420 in Phase 9 — an LLM summary
+trimmed back to 400 characters is a teaser again, which is the whole thing that
+phase set out to stop.
 
 ### Pointing the firmware at it
 In `firmware/src/news_client.h`:

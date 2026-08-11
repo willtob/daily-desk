@@ -14,6 +14,7 @@ digest short, a second pass fills the remaining slots by score alone.
 from __future__ import annotations
 
 import logging
+import random
 from collections import Counter
 
 from langsmith import traceable
@@ -26,6 +27,21 @@ logger = logging.getLogger(__name__)
 DEFAULT_TOP_N = 10
 DEFAULT_PER_AREA_CAP = 3
 
+# The wildcard is drawn from a band in the middle of the ranking, given as
+# percentiles of the score distribution: the 40th to the 70th.
+#
+# It used to be the bottom quarter, on the theory that the furthest thing from
+# the profile was the most surprising. Ten digests said otherwise — the bottom
+# is reliably the same handful of shapes every day, a two-line sports result or
+# a weather bulletin, which is randomness without discovery. The pleasant
+# surprise lives mid-pack: adjacent to something I care about, but not central
+# enough to win a slot on its own. High enough to be about one of my topics,
+# low enough that the ranker was never going to show it to me.
+#
+# The band is wide enough that the pick genuinely moves run to run. It stays a
+# uniform random draw over that band — nothing here ranks or seeds it.
+DEFAULT_WILDCARD_BAND = (0.40, 0.70)
+
 # Articles with no summary are dropped from the front page. They score fine —
 # a rolling "Live updates: Today's South Florida news" index page is a perfect
 # semantic match for local news — but there is nothing to read once you open
@@ -33,6 +49,58 @@ DEFAULT_PER_AREA_CAP = 3
 # tend to carry the date, so the seen store can't suppress them: they'd top
 # every digest forever.
 DEFAULT_MIN_SUMMARY_CHARS = 1
+
+
+def _written_score(article: Article) -> float:
+    """The score interests.yaml alone gave an article.
+
+    Falls back to ``score`` for articles that predate ``base_score`` or were
+    built by hand, which is the same number whenever there is no feedback.
+    """
+    if article.base_score is not None:
+        return article.base_score
+    return article.score or 0.0
+
+
+def _pick_wildcard(
+    ranked: list[Article],
+    *,
+    exclude: set[str],
+    band: tuple[float, float] = DEFAULT_WILDCARD_BAND,
+    rng: random.Random | None = None,
+) -> Article | None:
+    """One article from the middle of ``ranked``, flagged as the wildcard.
+
+    ``ranked`` is best-first and already filtered. ``band`` is a pair of score
+    percentiles, low first, so ``(0.40, 0.70)`` means "somewhere between the
+    40th and the 70th percentile". Returns None when everything left is already
+    on the front page, which is what a thin corpus looks like.
+
+    The band is measured on ``base_score`` — the written profile alone — so
+    like/dislike verdicts cannot steer the exploration slot toward more of what
+    they already know about. The one residue worth naming: feedback still
+    changes *which* articles the front page took, so the pool this draws from
+    differs by whatever the page swallowed. The ordering inside the pool is
+    feedback-free; its membership is not, and it cannot be without letting the
+    wildcard duplicate a story already on the page.
+    """
+    candidates = [a for a in ranked if a.url not in exclude]
+    if not candidates:
+        return None
+    candidates = sorted(candidates, key=_written_score, reverse=True)
+
+    # Percentiles count up from the worst article; ``candidates`` counts down
+    # from the best. The 70th percentile is therefore 30% of the way in from the
+    # front, and the 40th is 60% of the way in — so the high percentile gives
+    # the slice's start and the low one gives its end.
+    low, high = band
+    n = len(candidates)
+    start = min(n - 1, round(n * (1.0 - high)))
+    stop = max(start + 1, round(n * (1.0 - low)))
+    middle = candidates[start:stop]
+
+    chosen = (rng or random).choice(middle)
+    return chosen.model_copy(update={"is_wildcard": True})
 
 
 @traceable(run_type="chain", name="curate")
@@ -43,6 +111,9 @@ def curate_articles(
     per_area_cap: int | None = DEFAULT_PER_AREA_CAP,
     seen: SeenStore | None = None,
     min_summary_chars: int = DEFAULT_MIN_SUMMARY_CHARS,
+    wildcard: bool = True,
+    wildcard_band: tuple[float, float] = DEFAULT_WILDCARD_BAND,
+    rng: random.Random | None = None,
 ) -> list[Article]:
     """Rank, filter and cap scored articles down to the digest's front page.
 
@@ -51,6 +122,13 @@ def curate_articles(
     the diversity cap. ``min_summary_chars`` of 0 keeps summary-less articles.
     Returned articles are ordered best-scoring first — grouping for
     readability happens at render time.
+
+    ``wildcard`` appends one mid-ranked article after the ranked page, flagged
+    with ``is_wildcard``. It is the only article here that isn't chosen by the
+    fitness function, and that's the point: the profile can only return more of
+    what it already knows about, so the digest needs one slot it doesn't
+    control. ``wildcard_band`` is the pair of score percentiles it is drawn
+    from. Pass ``rng`` to make the pick reproducible.
     """
     if not scored:
         logger.info("No articles to curate")
@@ -78,7 +156,7 @@ def curate_articles(
 
     # 1. Drop anything a previous digest already carried.
     if seen is not None:
-        fresh = [a for a in ranked if not seen.contains(a.url)]
+        fresh = [a for a in ranked if not seen.contains(a.url, a.published)]
         repeats = len(ranked) - len(fresh)
         if repeats:
             logger.info("Curate: skipped %d articles seen in earlier digests", repeats)
@@ -118,11 +196,27 @@ def curate_articles(
     # Backfill appends out of order; restore the score ranking.
     picked.sort(key=lambda a: a.score or 0.0, reverse=True)
 
+    # 4. The exploration slot — appended after the sort, so it stays last
+    #    however badly (or well) it happens to have scored.
+    if wildcard:
+        pick = _pick_wildcard(ranked, exclude=picked_urls, band=wildcard_band, rng=rng)
+        if pick is not None:
+            picked.append(pick)
+            area_counts[pick.matched_area or "unscored"] += 1
+            logger.info(
+                "Curate: wildcard %.4f [%s] %s — %s",
+                pick.score or 0.0,
+                pick.matched_area or "unscored",
+                pick.source,
+                pick.title[:60],
+            )
+
     logger.info(
-        "Curated %d of %d articles (top_n=%d, per_area_cap=%s): %s",
+        "Curated %d of %d articles (top_n=%d%s, per_area_cap=%s): %s",
         len(picked),
         len(scored),
         top_n,
+        " +1 wildcard" if any(a.is_wildcard for a in picked) else "",
         cap or "off",
         ", ".join(f"{a}={n}" for a, n in area_counts.most_common()) or "none",
     )

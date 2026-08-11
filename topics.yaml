@@ -1,0 +1,836 @@
+# 15-minute learning — the topic bank.
+#
+# One topic is drawn at random, a 15-minute timer runs, I explain it from
+# memory, and an LLM grades the explanation against the `covers` hint below.
+#
+# THIS FILE IS MEANT TO BE TUNED, in the same spirit as interests.yaml. The
+# topics are what I get asked; the `covers` hints are the rubric the grader
+# scores against. If the feedback on a topic is consistently vague, the fix is
+# almost always a sharper `covers` hint here, not a longer prompt in grade.py.
+#
+#   id:         stable, unique, snake_case. Referenced by learn.db rows, so
+#               renaming one orphans its history — add a new topic instead.
+#   name:       what I'm shown when the timer starts.
+#   difficulty: intro | intermediate | advanced. Drives selection weighting
+#               (see `settings.weights`), not grading — a 7/10 on an intro
+#               topic and a 7/10 on an advanced one mean the same thing.
+#   covers:     what a good explanation actually contains. NEVER shown before
+#               I explain — that would turn recall into reading. It goes to the
+#               grader only, as the checklist that makes `missed_concepts`
+#               specific instead of "could have gone deeper".
+#
+# On writing `covers`: name the concrete things. "Explains the bias-variance
+# tradeoff" is unscoreable — the model will award it to anything that uses the
+# words. "Says that variance is error from sensitivity to the training sample,
+# and that more capacity trades one for the other" can be checked against a
+# transcript. Roughly 3-5 checkable claims each; more than that and every
+# explanation scores badly for missing something peripheral.
+#
+# Difficulty is honest, not aspirational: `intro` means I should be able to do
+# it cold, `advanced` means a good explanation needs the mechanism and not just
+# the vocabulary. Getting this wrong quietly breaks the weighting, because the
+# selector uses it to decide when to stop being gentle.
+
+settings:
+  # A session counts toward the streak at or above this grade. 7 is deliberately
+  # not 5: "I said things that were true" is not the bar, "I explained it to
+  # someone who didn't know it" is. Lower it if the streak stops feeling
+  # achievable on a bad week — that's a real reason, not a concession.
+  pass_score: 7
+
+  # Calendar-day boundary for streaks. Empty string means the system's local
+  # zone, which is what you want unless you're travelling and would rather the
+  # streak keep using home days. Any IANA name works: "Europe/Madrid",
+  # "America/New_York".
+  timezone: ""
+
+  # Relative draw weight per difficulty. These are the default, gentle-mode
+  # weights: intro topics come up three times as often as advanced ones.
+  weights:
+    intro: 3.0
+    intermediate: 2.0
+    advanced: 1.0
+
+  # When recent scores are good, the mix tilts hard instead. Same numbers
+  # inverted rather than a separate tuning surface — there is no evidence yet
+  # that would justify a third set of magic constants.
+  strong_weights:
+    intro: 1.0
+    intermediate: 2.0
+    advanced: 3.0
+
+  # `strong_weights` applies once the rolling average over the last
+  # `strong_window` graded sessions reaches `strong_average`. The window has to
+  # be full: promoting on the strength of two good sessions is how a bank of 74
+  # topics turns into "advanced only" after a lucky Tuesday.
+  strong_window: 5
+  strong_average: 7.5
+
+  # A topic drawn within this many days is skipped. If the cooldown would leave
+  # nothing to draw, it is ignored rather than failing — spaced repetition is
+  # the goal, but being told there is nothing to learn today is worse.
+  repeat_cooldown_days: 14
+
+topics:
+  # ── Classical ML foundations ──────────────────────────────────────────────
+  # The base layer. Mostly `intro`, and deliberately so: these are the ones
+  # where a wrong explanation is most embarrassing and least likely to be
+  # noticed, because everyone assumes they know them.
+
+  - id: supervised_vs_unsupervised
+    name: Supervised vs unsupervised learning
+    difficulty: intro
+    covers: >
+      Supervised learning has labelled targets and learns a mapping from inputs
+      to those targets; unsupervised learning has no labels and finds structure
+      in the inputs themselves. Should give a concrete example of each, and
+      ideally note that the line blurs — self-supervised learning manufactures
+      labels from unlabelled data, which is how language models are trained.
+
+  - id: train_test_split
+    name: Train/test split
+    difficulty: intro
+    covers: >
+      Holding data back so that measured performance estimates performance on
+      data the model has never seen. Should say why evaluating on training data
+      is meaningless (the model can memorise), and mention the three-way
+      train/validation/test split — validation for choices you make repeatedly,
+      test touched once at the end, because every look at the test set leaks a
+      little information into your decisions.
+
+  - id: overfitting_underfitting
+    name: Overfitting and underfitting
+    difficulty: intro
+    covers: >
+      Overfitting is fitting noise specific to the training sample, so training
+      error keeps falling while held-out error rises; underfitting is too little
+      capacity to capture the real signal, so both stay high. Should describe
+      the diagnostic (the gap between train and validation curves) and at least
+      two remedies per side.
+
+  - id: bias_variance
+    name: The bias-variance tradeoff
+    difficulty: intermediate
+    covers: >
+      Bias is error from wrong assumptions in the model class, variance is error
+      from sensitivity to which training sample you happened to draw, and there
+      is an irreducible noise floor beneath both. Should explain why capacity
+      trades one against the other, and ideally note that the classical U-shaped
+      curve is not the whole story for very large models (double descent).
+
+  - id: cross_validation
+    name: Cross-validation
+    difficulty: intro
+    covers: >
+      Rotating which fold is held out so every point serves as validation
+      exactly once, then averaging. Should say what it buys — a less noisy
+      estimate from limited data, plus a variance estimate across folds — and
+      what it costs (k times the training). Bonus for stratification and for
+      knowing that time series need forward-chaining instead.
+
+  - id: linear_regression
+    name: Linear regression
+    difficulty: intro
+    covers: >
+      Fitting a linear function of the inputs by minimising squared error.
+      Should mention that a closed-form solution exists but gradient descent is
+      used at scale, and what the coefficients mean. Bonus for naming an
+      assumption that gets violated in practice — correlated predictors making
+      individual coefficients unstable and uninterpretable.
+
+  - id: logistic_regression
+    name: Logistic regression
+    difficulty: intro
+    covers: >
+      Despite the name it classifies: a linear score squashed through a sigmoid
+      into a probability, fitted by maximising likelihood / minimising log loss.
+      Should explain why squared error is the wrong loss here, and that the
+      decision boundary is linear in the input space.
+
+  - id: decision_trees
+    name: Decision trees
+    difficulty: intro
+    covers: >
+      Recursively splitting the feature space on the single split that most
+      reduces impurity (Gini or entropy). Should note the appeal — readable,
+      needs no scaling, handles mixed types — and the failure: an unpruned tree
+      fits the training data perfectly and generalises badly, which is what
+      motivates ensembles.
+
+  - id: random_forests
+    name: Random forests
+    difficulty: intermediate
+    covers: >
+      Many deep trees trained on bootstrap samples, each split considering only
+      a random subset of features, then averaged. Should explain that both
+      sources of randomness exist to decorrelate the trees, and that averaging
+      reduces variance without adding much bias, which is why the individual
+      trees are allowed to overfit.
+
+  - id: gradient_boosting
+    name: Gradient boosting
+    difficulty: intermediate
+    covers: >
+      Trees fitted sequentially, each to the residual errors of the ensemble so
+      far, scaled by a learning rate. Should contrast with bagging — sequential
+      bias reduction rather than parallel variance reduction — and note that
+      boosting does overfit with too many rounds, so it needs early stopping.
+
+  - id: knn
+    name: k-nearest neighbours
+    difficulty: intro
+    covers: >
+      No training: predict from the k closest stored examples under some
+      distance metric. Should cover how k trades noise-fitting against
+      over-smoothing, that features must be scaled or the largest-range feature
+      dominates the distance, and that the cost is all at inference time.
+
+  - id: svm
+    name: Support vector machines
+    difficulty: intermediate
+    covers: >
+      Finding the separating hyperplane with maximum margin, defined only by the
+      support vectors on the boundary. Should explain the soft margin for
+      non-separable data, and the kernel trick — computing inner products in a
+      higher-dimensional space without ever constructing the coordinates.
+
+  - id: kmeans
+    name: k-means clustering
+    difficulty: intro
+    covers: >
+      Alternating between assigning points to the nearest centroid and moving
+      centroids to the mean of their assignments, until stable. Should name the
+      real limitations: k chosen in advance, convergence to a local optimum that
+      depends on initialisation (hence k-means++), and an implicit assumption of
+      round, similarly-sized clusters.
+
+  - id: pca
+    name: Principal component analysis
+    difficulty: intermediate
+    covers: >
+      Rotating onto the orthogonal directions of greatest variance and keeping
+      the first few. Should connect it to eigenvectors of the covariance matrix
+      or the SVD, say that centring (and usually scaling) is required first, and
+      be clear that components are linear combinations of all inputs — this is
+      not feature selection, and interpretability is usually lost.
+
+  - id: naive_bayes
+    name: Naive Bayes
+    difficulty: intro
+    covers: >
+      Bayes' rule plus the "naive" assumption that features are conditionally
+      independent given the class, which makes the likelihood a simple product.
+      Should note that the independence assumption is essentially always false
+      yet the classifier often works anyway, because ranking the classes
+      correctly is easier than estimating the probabilities correctly.
+
+  - id: feature_scaling
+    name: Feature scaling and normalisation
+    difficulty: intro
+    covers: >
+      Standardisation versus min-max, and why it matters: anything distance-based
+      or gradient-based is dominated by whichever feature has the largest range.
+      Should note which models don't care (trees) and — the part people get
+      wrong — that the scaler must be fitted on the training set alone and
+      applied to validation and test, or you have leaked.
+
+  - id: class_imbalance
+    name: Handling class imbalance
+    difficulty: intermediate
+    covers: >
+      Why accuracy is useless at 99:1 and what to use instead (precision/recall,
+      PR-AUC). Should cover at least two of: resampling, class weights in the
+      loss, threshold tuning after training — and note that resampling distorts
+      the predicted probabilities, so calibration suffers.
+
+  # ── Evaluation ────────────────────────────────────────────────────────────
+  # Kept as its own group because these are the topics where I'm most likely to
+  # produce a confident, fluent, wrong explanation.
+
+  - id: precision_recall
+    name: Precision, recall, and F1
+    difficulty: intro
+    covers: >
+      Precision is the fraction of positive predictions that were right, recall
+      the fraction of actual positives that were caught, F1 their harmonic mean.
+      Should get the denominators right, explain the threshold tradeoff between
+      them, and give a case where one clearly matters more than the other.
+
+  - id: roc_auc
+    name: ROC curves and AUC
+    difficulty: intermediate
+    covers: >
+      Sweeping the threshold and plotting true positive rate against false
+      positive rate; AUC as the probability a random positive outranks a random
+      negative. Should say that it's threshold-independent and measures ranking
+      rather than calibration, and that under heavy imbalance ROC-AUC looks
+      flatteringly high where PR-AUC does not.
+
+  - id: confusion_matrix
+    name: The confusion matrix
+    difficulty: intro
+    covers: >
+      The four cells, and that nearly every classification metric is a ratio of
+      them. Should be able to derive precision, recall, and accuracy from it,
+      and say what the two error types cost in some concrete application.
+
+  - id: calibration
+    name: Probability calibration
+    difficulty: advanced
+    covers: >
+      A calibrated model's 0.7 predictions are right about 70% of the time —
+      which is separate from, and not implied by, good discrimination. Should
+      mention reliability diagrams or ECE as the measurement, a fixing method
+      (Platt scaling, isotonic regression), and why modern deep networks tend to
+      be overconfident.
+
+  - id: data_leakage
+    name: Data leakage
+    difficulty: intermediate
+    covers: >
+      Information about the target reaching the model in ways it won't have at
+      inference, producing offline numbers that collapse in production. Should
+      give concrete mechanisms — preprocessing fitted before the split, features
+      computed from the future, duplicate rows straddling the split, grouped
+      data (same patient, same user) split at random.
+
+  # ── Neural network fundamentals ───────────────────────────────────────────
+
+  - id: backpropagation
+    name: Backpropagation
+    difficulty: intermediate
+    covers: >
+      The chain rule applied backwards through the computation graph, reusing
+      each layer's intermediate results so all gradients cost about one extra
+      forward pass rather than one pass per parameter. Should be clear that it
+      computes gradients and does not itself update anything — the optimiser
+      does that — and that the forward activations must be kept in memory, which
+      is where training memory actually goes.
+
+  - id: activation_functions
+    name: Activation functions
+    difficulty: intro
+    covers: >
+      Why a nonlinearity is needed at all — stacked linear layers collapse to a
+      single linear layer. Should compare at least two, and explain ReLU's
+      dominance (cheap, no saturation for positive inputs) along with its
+      failure mode of dead units, and what GELU/SiLU change.
+
+  - id: loss_functions
+    name: Loss functions
+    difficulty: intro
+    covers: >
+      The scalar that training minimises, and why the choice follows the task:
+      squared error for regression, cross-entropy for classification. Should
+      explain why cross-entropy is preferred over squared error for
+      probabilities — the gradient doesn't vanish when the model is confidently
+      wrong.
+
+  - id: gradient_descent
+    name: Gradient descent
+    difficulty: intro
+    covers: >
+      Stepping parameters opposite the gradient of the loss, scaled by a
+      learning rate. Should describe what too-large and too-small learning rates
+      each look like in practice, and be clear that the loss surface is
+      non-convex so this finds a local optimum, not the global one.
+
+  - id: sgd_minibatch
+    name: Stochastic and mini-batch gradient descent
+    difficulty: intro
+    covers: >
+      Estimating the gradient from a batch rather than the full dataset. Should
+      cover the tradeoff — noisier steps but far more of them per unit time,
+      plus a memory ceiling — and that the noise is not purely a cost, since it
+      helps escape sharp minima.
+
+  - id: learning_rate_schedules
+    name: Learning rate schedules
+    difficulty: intermediate
+    covers: >
+      Varying the rate over training rather than fixing it: warmup to avoid
+      early instability while the optimiser state is still meaningless, then
+      decay (cosine, step) to settle. Should say why the end of training wants
+      smaller steps than the start.
+
+  - id: adam_optimizer
+    name: Adam and adaptive optimisers
+    difficulty: intermediate
+    covers: >
+      Momentum (a running average of gradients) combined with per-parameter step
+      sizes from a running average of squared gradients, plus bias correction
+      early on. Should explain what per-parameter scaling buys on sparse or
+      badly-scaled gradients, and note the memory cost — two extra states per
+      parameter, which is a third of the optimiser memory bill in large training
+      runs. Bonus for AdamW and why decoupling weight decay mattered.
+
+  - id: vanishing_exploding_gradients
+    name: Vanishing and exploding gradients
+    difficulty: intermediate
+    covers: >
+      Gradients shrinking or growing multiplicatively through depth, so early
+      layers get no signal or the run diverges. Should connect it to repeated
+      multiplication by Jacobians, name saturating activations as a classic
+      cause, and give fixes: better initialisation, normalisation, residual
+      connections, gradient clipping.
+
+  - id: batch_norm
+    name: Batch normalisation
+    difficulty: intermediate
+    covers: >
+      Normalising each feature across the batch, with learned scale and shift.
+      Should note that it behaves differently at training and inference (running
+      statistics), and that it couples examples within a batch — which is why
+      small batches hurt it and why it sits awkwardly with sequence models.
+
+  - id: layer_norm
+    name: Layer normalisation
+    difficulty: intermediate
+    covers: >
+      Normalising across features within a single example, so there is no batch
+      coupling and no train/inference discrepancy. Should say why this is what
+      transformers use, and ideally where it sits in the block (pre-norm versus
+      post-norm) and why pre-norm trains more stably at depth.
+
+  - id: dropout
+    name: Dropout
+    difficulty: intro
+    covers: >
+      Randomly zeroing units during training so the network can't rely on any
+      one path, acting like an ensemble average. Should say it is disabled at
+      inference with activations rescaled to match, and note that it is much
+      less used in large transformers than it was in the CNN era.
+
+  - id: residual_connections
+    name: Residual connections
+    difficulty: intermediate
+    covers: >
+      Adding the input of a block to its output so each block learns a residual.
+      Should explain the gradient-path argument — the identity path carries
+      gradient to early layers unattenuated — and that this is what made very
+      deep networks trainable at all.
+
+  - id: cnn
+    name: Convolutional neural networks
+    difficulty: intro
+    covers: >
+      Learned filters slid across the input, sharing weights across positions.
+      Should cover why weight sharing is the point (translation equivariance and
+      far fewer parameters than a dense layer), how receptive fields grow with
+      depth, and what pooling does.
+
+  - id: rnn_lstm
+    name: RNNs and LSTMs
+    difficulty: intermediate
+    covers: >
+      A hidden state carried across timesteps, trained by backpropagation
+      through time. Should explain why plain RNNs fail on long dependencies and
+      how the LSTM's gated cell state addresses it, plus the structural problem
+      transformers solved: recurrence is inherently sequential and won't
+      parallelise across the sequence.
+
+  - id: embeddings
+    name: Embeddings
+    difficulty: intro
+    covers: >
+      Dense learned vectors where geometric closeness encodes similarity of
+      meaning or usage. Should say where they come from (learned as parameters,
+      or taken from a trained model), what cosine similarity is doing, and give
+      a real use — retrieval, clustering, recommendations.
+
+  - id: transfer_learning
+    name: Transfer learning and fine-tuning
+    difficulty: intro
+    covers: >
+      Starting from weights trained on a large general corpus and adapting to a
+      smaller specific task. Should explain why this beats training from scratch
+      on small data, mention freezing versus full fine-tuning, and note that too
+      high a learning rate destroys the pretrained representations.
+
+  - id: self_supervised_learning
+    name: Self-supervised learning
+    difficulty: intermediate
+    covers: >
+      Manufacturing supervision from the data's own structure — next-token
+      prediction, masked reconstruction, contrastive pairs — so unlabelled data
+      becomes trainable. Should say why this is the unlock behind foundation
+      models: labels were the binding constraint, and this removes it.
+
+  # ── Transformers and LLM architecture ─────────────────────────────────────
+
+  - id: tokenization_bpe
+    name: Tokenization and BPE
+    difficulty: intro
+    covers: >
+      Text split into subword units by an algorithm that merges frequent pairs,
+      so common words are one token and rare ones decompose. Should explain why
+      not characters (sequences too long) and why not words (unbounded
+      vocabulary, no handling of unseen words), and name a consequence —
+      arithmetic and character-level tasks being oddly hard, non-English text
+      costing more tokens.
+
+  - id: attention
+    name: The attention mechanism
+    difficulty: intermediate
+    covers: >
+      Each position computing a weighted sum over other positions, where the
+      weights come from learned similarity. Should convey that it is a
+      content-based lookup rather than a fixed window, and that every position
+      can reach every other in one step — constant path length, unlike
+      recurrence.
+
+  - id: self_attention_qkv
+    name: Queries, keys, and values
+    difficulty: intermediate
+    covers: >
+      Three learned projections of the same input: query as what this position
+      is looking for, key as what each position offers, value as what gets
+      passed along. Should describe the dot-product-then-softmax flow and
+      explain the scaling by sqrt(d_k) — large dot products push the softmax
+      into a saturated regime where gradients vanish.
+
+  - id: multi_head_attention
+    name: Multi-head attention
+    difficulty: intermediate
+    covers: >
+      Several attention operations in parallel on lower-dimensional projections,
+      concatenated and projected back. Should give the reason — different heads
+      attend to different relationships, and one softmax can only concentrate on
+      one thing — and note the total cost is comparable because each head is
+      narrower.
+
+  - id: positional_encoding
+    name: Positional encoding
+    difficulty: intermediate
+    covers: >
+      Attention is permutation-invariant, so position must be injected
+      explicitly or the model sees a bag of tokens. Should contrast learned
+      absolute embeddings with sinusoidal ones, and ideally note the extrapolation
+      problem: nothing teaches the model about positions longer than it saw.
+
+  - id: transformer_block
+    name: The transformer block
+    difficulty: intermediate
+    covers: >
+      Attention followed by a position-wise feed-forward network, each wrapped
+      in a residual connection and a layer norm. Should say what each half does
+      — attention moves information between positions, the MLP processes each
+      position independently — and note that the MLP holds most of the
+      parameters.
+
+  - id: encoder_decoder_vs_decoder_only
+    name: Encoder-decoder vs decoder-only
+    difficulty: intermediate
+    covers: >
+      Bidirectional encoding versus causal masking, and why generative LLMs
+      settled on decoder-only stacks. Should explain what the causal mask
+      enforces and why it makes training efficient — every position is a
+      training example in a single pass.
+
+  - id: kv_cache
+    name: The KV cache
+    difficulty: advanced
+    covers: >
+      Caching keys and values for previous tokens so each generated token costs
+      one position of attention instead of recomputing the whole prefix. Should
+      quantify the shape of the tradeoff — memory growing linearly with context
+      and batch size, becoming the binding constraint on how many requests fit
+      on a GPU — and connect it to why prefill and decode have such different
+      performance profiles.
+
+  - id: rope
+    name: Rotary positional embeddings
+    difficulty: advanced
+    covers: >
+      Encoding position by rotating query and key vectors by an angle
+      proportional to position, so their dot product depends on relative
+      distance. Should explain why relative beats absolute here, that it needs
+      no extra parameters and applies at every layer, and how the frequency
+      base can be scaled to extend context.
+
+  - id: grouped_query_attention
+    name: Grouped-query attention
+    difficulty: advanced
+    covers: >
+      Multiple query heads sharing one set of key/value heads, sitting between
+      full multi-head and single-KV multi-query attention. Should be clear that
+      the motivation is inference memory bandwidth — the KV cache shrinks by the
+      sharing factor — and that quality loss is small relative to that win.
+
+  - id: mixture_of_experts
+    name: Mixture of experts
+    difficulty: advanced
+    covers: >
+      A router selecting a few expert FFNs per token, so total parameters far
+      exceed those active on any one token. Should separate total from active
+      parameters clearly, and name a real difficulty: load balancing, since a
+      router left alone collapses onto a few favourite experts.
+
+  - id: flash_attention
+    name: FlashAttention
+    difficulty: advanced
+    covers: >
+      Computing exact attention without materialising the full N-by-N matrix, by
+      tiling and keeping blocks in fast on-chip memory. Should be clear that it
+      is an exact reordering rather than an approximation, and that the win is
+      memory bandwidth, not arithmetic — attention was IO-bound, not compute-bound.
+
+  - id: context_length_scaling
+    name: Why long context is hard
+    difficulty: advanced
+    covers: >
+      Attention cost growing quadratically with sequence length while KV cache
+      memory grows linearly. Should separate the compute problem from the memory
+      problem, and note that fitting a long context is not the same as using it
+      well — position extrapolation and lost-in-the-middle effects are their own
+      failures.
+
+  # ── Training and alignment ────────────────────────────────────────────────
+
+  - id: pretraining_objective
+    name: Next-token prediction as pretraining
+    difficulty: intermediate
+    covers: >
+      Predicting the next token over a very large corpus, with cross-entropy
+      loss. Should articulate why such a simple objective produces broad
+      capability — predicting text well requires modelling whatever produced the
+      text — and that the result is a base model that continues text rather than
+      one that follows instructions.
+
+  - id: scaling_laws
+    name: Scaling laws
+    difficulty: advanced
+    covers: >
+      Loss falling as a smooth power law in parameters, data, and compute, which
+      makes the returns of a training run predictable in advance. Should mention
+      the compute-optimal allocation result (Chinchilla) and, ideally, that
+      inference cost pushes real deployments toward smaller models trained on
+      more data than compute-optimal.
+
+  - id: instruction_tuning
+    name: Instruction tuning
+    difficulty: intermediate
+    covers: >
+      Supervised fine-tuning on instruction/response pairs, converting a text
+      continuer into something that answers. Should be clear this changes
+      behaviour and format far more than it adds knowledge, and that data
+      quality dominates data quantity here.
+
+  - id: rlhf
+    name: RLHF
+    difficulty: advanced
+    covers: >
+      Human preference comparisons training a reward model, which then scores
+      the policy's outputs during RL (typically PPO), with a KL penalty against
+      the reference model. Should explain why preferences are collected as
+      comparisons rather than absolute scores, and what the KL term is holding
+      back — unconstrained optimisation against a learned reward finds its
+      exploits.
+
+  - id: dpo
+    name: Direct preference optimisation
+    difficulty: advanced
+    covers: >
+      Optimising directly on preference pairs with a classification-style loss,
+      skipping the explicit reward model and RL loop. Should say what this buys
+      — far simpler and more stable to run — and be honest that it is not
+      strictly dominant; online methods still have arguments in their favour.
+
+  - id: lora
+    name: LoRA and parameter-efficient fine-tuning
+    difficulty: intermediate
+    covers: >
+      Freezing the base weights and training a low-rank update alongside them.
+      Should explain where the savings come from (optimiser state and gradients
+      for a tiny fraction of parameters), that adapters can be swapped or merged
+      at inference, and what rank controls.
+
+  - id: quantization
+    name: Quantization
+    difficulty: intermediate
+    covers: >
+      Storing weights and sometimes activations at lower precision. Should give
+      real numbers — what 8-bit or 4-bit does to memory footprint — distinguish
+      post-training quantization from quantization-aware training, and note that
+      the practical win is often memory bandwidth rather than arithmetic.
+
+  - id: distillation
+    name: Knowledge distillation
+    difficulty: intermediate
+    covers: >
+      A small student trained to match a large teacher's output distribution
+      rather than just hard labels. Should explain why the full distribution
+      carries more signal than the argmax, and where distillation sits relative
+      to just training the small model directly.
+
+  - id: reward_hacking
+    name: Reward hacking and Goodhart's law
+    difficulty: advanced
+    covers: >
+      Optimising a proxy hard enough that the proxy stops tracking the goal.
+      Should give concrete LLM-scale examples — sycophancy, length bias,
+      confident-sounding wrongness scoring well with raters — and note that this
+      gets worse rather than better with optimisation pressure.
+
+  # ── Inference and serving ─────────────────────────────────────────────────
+
+  - id: sampling_temperature_topp
+    name: "Sampling: temperature, top-k, top-p"
+    difficulty: intro
+    covers: >
+      How a token is actually chosen from the output distribution. Should say
+      what temperature does to the distribution's shape, the difference between
+      top-k's fixed count and top-p's cumulative mass, and why greedy decoding
+      is not simply the best option.
+
+  - id: speculative_decoding
+    name: Speculative decoding
+    difficulty: advanced
+    covers: >
+      A small draft model proposing several tokens that the large model verifies
+      in one parallel forward pass, keeping the accepted prefix. Should be clear
+      that the output distribution is preserved exactly, and that the win exists
+      because decoding is memory-bandwidth-bound — the large model was idle
+      waiting on weights anyway.
+
+  - id: batching_throughput_latency
+    name: Batching, throughput, and latency
+    difficulty: advanced
+    covers: >
+      Why serving batches requests and what that does to the two metrics, which
+      pull against each other. Should distinguish the prefill phase
+      (compute-bound, parallel over the prompt) from decode (memory-bound, one
+      token at a time), and ideally mention continuous batching.
+
+  # ── Applied LLM systems ───────────────────────────────────────────────────
+
+  - id: rag
+    name: Retrieval-augmented generation
+    difficulty: intro
+    covers: >
+      Retrieving relevant documents and putting them in the context so the model
+      answers from supplied text rather than parameters. Should say what problem
+      it solves (stale or absent knowledge, citations, no retraining) and that it
+      moves the failure mode into retrieval — nothing is fixed if the right
+      document never surfaces.
+
+  - id: vector_databases_ann
+    name: Vector search and ANN indexes
+    difficulty: intermediate
+    covers: >
+      Approximate nearest-neighbour search over embeddings, because exact search
+      doesn't scale. Should name a method (HNSW, IVF) with a rough sense of how
+      it works, and be clear about the recall/latency tradeoff being a knob, not
+      a fixed property.
+
+  - id: chunking_strategies
+    name: Chunking for retrieval
+    difficulty: intermediate
+    covers: >
+      How documents are split before embedding, and why it decides retrieval
+      quality. Should cover the size tradeoff — too small loses context, too
+      large dilutes the embedding — plus overlap, and respecting document
+      structure over fixed character counts.
+
+  - id: hybrid_search_reranking
+    name: Hybrid search and reranking
+    difficulty: intermediate
+    covers: >
+      Combining lexical search (BM25) with dense retrieval, then reranking the
+      shortlist with a cross-encoder. Should explain what each leg catches that
+      the other misses — exact identifiers and rare terms versus paraphrase —
+      and why a cross-encoder is accurate but can only be afforded on a
+      shortlist.
+
+  - id: prompt_engineering
+    name: Prompt engineering
+    difficulty: intro
+    covers: >
+      Structuring input to get reliable output: clear instructions, examples,
+      output format, relevant context. Should go past "be specific" to a real
+      mechanism — few-shot examples pinning format and edge cases, letting the
+      model reason before answering — and note what prompting cannot fix.
+
+  - id: function_calling_tools
+    name: Tool use and function calling
+    difficulty: intermediate
+    covers: >
+      The model emitting a structured call that the application executes, with
+      the result fed back into the conversation. Should be clear the model does
+      not run anything itself, that schemas constrain the output, and that error
+      handling matters because models call tools with wrong arguments.
+
+  - id: agent_loops
+    name: Agent loops
+    difficulty: intermediate
+    covers: >
+      Iterating model-decides / tool-runs / result-returns until a stopping
+      condition. Should cover what makes this hard in practice — error recovery,
+      context growth over long runs, knowing when to stop — rather than just
+      describing the loop.
+
+  - id: evals_for_llms
+    name: Evaluating LLM systems
+    difficulty: intermediate
+    covers: >
+      Why standard metrics fail on open-ended output and what replaces them:
+      task-specific graded sets, LLM-as-judge with its known biases, human
+      review on a sample. Should stress that a small hand-built eval set beats a
+      benchmark score, and mention contamination.
+
+  - id: hallucination
+    name: Hallucination
+    difficulty: intro
+    covers: >
+      Fluent, confident, false output. Should explain the mechanism rather than
+      calling it a bug — the objective rewards plausible continuations, not
+      true ones, and nothing in training separates the two — and give real
+      mitigations (grounding in retrieved text, citations, calibrated
+      abstention) while noting none of them eliminate it.
+
+  - id: structured_output
+    name: Structured output and constrained decoding
+    difficulty: intermediate
+    covers: >
+      Getting reliably parseable output by constraining generation to a grammar
+      or schema rather than asking nicely and parsing hopefully. Should explain
+      the mechanism — masking tokens that would break the schema — and note that
+      valid JSON is not the same as correct content.
+
+  # ── Generative and other paradigms ────────────────────────────────────────
+
+  - id: gans
+    name: Generative adversarial networks
+    difficulty: intermediate
+    covers: >
+      A generator and discriminator trained against each other. Should describe
+      the minimax setup and the characteristic instabilities — mode collapse,
+      the two networks needing to stay balanced — which is much of why diffusion
+      displaced GANs for image generation.
+
+  - id: diffusion_models
+    name: Diffusion models
+    difficulty: intermediate
+    covers: >
+      Training a model to reverse a gradual noising process, then generating by
+      denoising from pure noise. Should say why the incremental formulation is
+      easier to train than one-shot generation, mention conditioning for
+      text-to-image, and note the sampling-steps/quality tradeoff.
+
+  - id: clip_multimodal
+    name: CLIP and joint embedding spaces
+    difficulty: intermediate
+    covers: >
+      Image and text encoders trained contrastively on paired data so both land
+      in one space. Should explain what a shared space enables — zero-shot
+      classification by comparing an image to label texts, text-to-image search
+      — and where the training pairs came from.
+
+  - id: reinforcement_learning_basics
+    name: Reinforcement learning basics
+    difficulty: intermediate
+    covers: >
+      Agent, environment, state, action, reward, and a policy learned from
+      interaction rather than labelled examples. Should cover the exploration/
+      exploitation tradeoff, why delayed reward makes credit assignment hard,
+      and how this differs structurally from supervised learning.

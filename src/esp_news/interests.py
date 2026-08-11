@@ -23,6 +23,7 @@ class InterestArea(BaseModel):
     name: str
     description: str = ""
     references: list[str] = Field(default_factory=list)
+    avoid: list[str] = Field(default_factory=list)
     weight: float = 1.0
 
     @property
@@ -35,6 +36,18 @@ class InterestArea(BaseModel):
         """
         texts = [self.description.strip(), *(r.strip() for r in self.references)]
         return [t for t in texts if t]
+
+    @property
+    def avoid_texts(self) -> list[str]:
+        """Phrases that subtract from this area's score.
+
+        Kept separate from ``reference_texts`` rather than folded in with a sign,
+        because the description belongs on the positive side and only the
+        explicit ``avoid`` entries belong on the negative one. Empty for most
+        areas — an area with no ``avoid`` list scores exactly as it did before
+        the field existed.
+        """
+        return [t for t in (a.strip() for a in self.avoid) if t]
 
 
 class InterestProfile(BaseModel):

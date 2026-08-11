@@ -6,14 +6,30 @@ __pycache__/
 # Secrets
 .env
 
-# Embedding cache (Phase 3) — regenerates itself, just costs an API call
+# Caches: embeddings (Phase 3), fetched pages and LLM summaries (Phase 9).
+# All regenerate themselves; they just cost an API call or a fetch.
 .cache/
 
 # Generated digests (Phase 5), the API payload (Phase 6), and the seen store
 digests/*.md
 digests/*.json
+# feedback.jsonl is deliberately NOT ignored. Unlike everything in this file it
+# does not regenerate — it is hand-made labelling, one tap at a time, and losing
+# it means starting over.
 # Cached TTS audio (Phase 8) — regenerates on demand, ~700 KB per article
 digests/audio/
 
+# The 15-minute learning store. Binary, so it diffs uselessly and merges not at
+# all — but unlike the caches it does NOT regenerate, so it is the one ignored
+# file here that would hurt to lose. Back it up if the streak starts mattering.
+learn.db
+learn.db-wal
+learn.db-shm
+
 # macOS
 .DS_Store
+
+# R console history. Nothing here is an R project; these appear because a
+# console was opened in a directory to look at something, and R writes one on
+# exit whether or not you asked. Unanchored, so it matches at any depth.
+.Rhistory

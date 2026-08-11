@@ -14,6 +14,12 @@ extern "C" {
 
 void news_ui_create(void);
 
+/* Rebuild every view at the display's current size. Called after the display
+ * rotation changes between portrait and landscape, where the layout differs
+ * rather than merely moving. Must be called with the LVGL lock held — it is
+ * invoked from the driver, which already holds it. */
+void news_ui_relayout(void);
+
 #ifdef __cplusplus
 }
 #endif

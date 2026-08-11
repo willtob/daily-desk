@@ -102,11 +102,11 @@ static void load_sample_data(void)
           "Placeholder summary in the shape of a Spanish-language Barcelona "
           "story, to check accented characters render." },
         { "Sample: CNN deployed for defect detection on a factory line",
-          "NVIDIA Developer", "classic_ml_applied", 0.4155f,
-          "Placeholder summary for the applied classic-architecture area." },
-        { "Sample: engineering blog on how a large team runs its build system",
-          "Meta Engineering", "big_tech_career", 0.3981f,
-          "Placeholder summary for the big-tech career area." },
+          "NVIDIA Developer", "model_architectures", 0.4155f,
+          "Placeholder summary for the model-architectures area." },
+        { "Sample: what I did to land a product internship in big tech",
+          "Lenny's Newsletter", "tech_careers", 0.3981f,
+          "Placeholder summary for the tech-careers area." },
         { "Sample: new low power microcontroller with e-ink support",
           "Hackaday", "embedded_wearables", 0.3760f,
           "Placeholder summary for the embedded area." },
@@ -124,6 +124,7 @@ static void load_sample_data(void)
         copy_field(news_articles[i].source,  NEWS_SOURCE_LEN,  samples[i].source);
         copy_field(news_articles[i].area,    NEWS_AREA_LEN,    samples[i].area);
         news_articles[i].score = samples[i].score;
+        news_articles[i].wildcard = false;
     }
 
     news_count = n;
@@ -179,6 +180,9 @@ static bool news_refresh_once(void)
         copy_field(news_articles[i].source,  NEWS_SOURCE_LEN,  a["source"]);
         copy_field(news_articles[i].area,    NEWS_AREA_LEN,    a["matched_area"]);
         news_articles[i].score = a["score"] | 0.0f;
+        /* Absent on digests written before the wildcard existed, and on any
+         * hand-made payload — defaults to false, which is the old behaviour. */
+        news_articles[i].wildcard = a["wildcard"] | false;
         i++;
     }
 

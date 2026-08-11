@@ -22,6 +22,15 @@ themes:
       url: https://blog.adafruit.com/feed/
     - name: CNX Software
       url: https://www.cnx-software.com/feed/
+    # The three feeds above are editorial — someone writing up someone else's
+    # build. These two are people posting their own, which is the register half
+    # of `embedded_wearables` ("I have built an amazing project nobody has built
+    # before", "ESP32 project ideas") and the part nothing else here supplies.
+    # Both are busy: ~22 of 25 entries land inside the 48h window.
+    - name: r/esp32
+      url: https://www.reddit.com/r/esp32/.rss
+    - name: r/embedded
+      url: https://www.reddit.com/r/embedded/.rss
 
   big_tech:
     - name: The Verge
@@ -30,6 +39,22 @@ themes:
       url: https://feeds.arstechnica.com/arstechnica/index
     - name: TechCrunch
       url: https://techcrunch.com/feed/
+
+  # Hiring, career, and what the job is actually like. New theme: `tech_careers`
+  # is the interest area with the widest gap between how much was written about
+  # it and what the feeds can answer — its best-scoring article on a typical day
+  # sits under the page cutoff, because nothing here was pointed at it. Both
+  # feeds are deliberately non-engineering: the profile asks for business and
+  # product roles and skips "how to become a technical SWE".
+  careers:
+    # Weekly-ish rather than daily — hiring, levelling, comp, and layoffs from
+    # inside big tech. Expect it to be outside the lookback most days.
+    - name: Pragmatic Engineer
+      url: https://blog.pragmaticengineer.com/rss/
+    # Product and business-side careers at tech companies, which is the half of
+    # `tech_careers` that no engineering-focused source will ever cover.
+    - name: Lenny's Newsletter
+      url: https://www.lennysnewsletter.com/feed
 
   startup_vc:
     - name: VentureBeat
@@ -47,10 +72,26 @@ themes:
       url: https://simonwillison.net/atom/everything/
     - name: r/LocalLLaMA
       url: https://www.reddit.com/r/LocalLLaMA/.rss
-    - name: Together AI
-      url: https://www.together.ai/blog/rss.xml
     - name: Import AI
       url: https://importai.substack.com/feed
+    # Removed: Together AI (https://www.together.ai/blog/rss.xml) — a vendor
+    # blog that won nothing in 11 digests, in the one area already over-supplied
+    # relative to how much the profile asks for it.
+
+  # The applied layer above the models — agents, evals, prompt and context
+  # engineering, coding agents. New theme, for the new `agentic_tooling` area,
+  # which until now had to borrow Simon Willison and Hacker News from elsewhere.
+  agentic:
+    # The AI-engineering beat specifically, which is what Part 3 of the interest
+    # form asked for by name.
+    - name: Latent Space
+      url: https://www.latent.space/feed
+    # People posting how they actually run their Claude projects — the
+    # first-person practitioner register the profile is tuned for, and the only
+    # feed here that will ever carry "this is how I do my claude projects".
+    # Busy: ~23 of 25 entries inside the lookback window.
+    - name: r/ClaudeAI
+      url: https://www.reddit.com/r/ClaudeAI/.rss
 
   # Interpretability, model welfare, and lab research announcements.
   ai_research:
@@ -64,6 +105,20 @@ themes:
       url: "http://export.arxiv.org/api/query?search_query=all:%22mechanistic+interpretability%22&sortBy=submittedDate&sortOrder=descending&max_results=25"
     - name: arXiv Consciousness
       url: "http://export.arxiv.org/api/query?search_query=all:%22AI+consciousness%22+OR+all:%22model+welfare%22&sortBy=submittedDate&sortOrder=descending&max_results=25"
+    # Three more targeted queries, one per remaining interest area that asked for
+    # papers. `deep_reads` is defined in interests.yaml as "research papers on any
+    # of the above topics", and the two queries above only covered two topics.
+    #
+    # Narrow queries mean these are usually outside the 48h lookback — every
+    # arXiv feed here was between 78h and 154h old when last checked. That is
+    # inherent to asking a quiet corner of arXiv a specific question, and it is
+    # the right trade against the cs.AI firehose noted above.
+    - name: arXiv Agents
+      url: "http://export.arxiv.org/api/query?search_query=all:%22LLM+agents%22+OR+all:%22agent+evaluation%22&sortBy=submittedDate&sortOrder=descending&max_results=25"
+    - name: arXiv Architectures
+      url: "http://export.arxiv.org/api/query?search_query=all:%22state+space+model%22+OR+all:%22world+model%22&sortBy=submittedDate&sortOrder=descending&max_results=25"
+    - name: arXiv EdgeML
+      url: "http://export.arxiv.org/api/query?search_query=all:%22on-device+inference%22+OR+all:%22TinyML%22+OR+all:%22model+quantization%22&sortBy=submittedDate&sortOrder=descending&max_results=25"
     - name: OpenAI News
       url: https://openai.com/news/rss.xml
     - name: Google DeepMind
@@ -71,8 +126,9 @@ themes:
     - name: Quanta Magazine
       url: https://api.quantamagazine.org/feed/
 
-  # No feed is dedicated to "older architectures in production", so these are
-  # general applied-ML sources that the classic_ml_applied interest area mines.
+  # No feed is dedicated to "how an architecture works and where it's used", so
+  # these are general applied-ML sources that the model_architectures interest
+  # area mines.
   ml_applied:
     - name: Google Research
       url: https://research.google/blog/rss/
@@ -80,18 +136,21 @@ themes:
       url: https://developer.nvidia.com/blog/feed
     - name: PyImageSearch
       url: https://pyimagesearch.com/feed/
-    - name: ML Mastery
-      url: https://machinelearningmastery.com/feed/
+    # Removed: ML Mastery (https://machinelearningmastery.com/feed/) — SEO
+    # tutorial content, nothing picked in 11 digests. PyImageSearch stays: it
+    # covers the CNN/U-Net material the profile explicitly asks for.
 
-  # Big-tech engineering blogs — these post slowly (weeks between entries), which
-  # is inherent to them rather than a broken feed.
-  eng_blogs:
-    - name: Meta Engineering
-      url: https://engineering.fb.com/feed/
-    - name: Netflix Tech Blog
-      url: https://netflixtechblog.com/feed
-    - name: AWS News
-      url: https://aws.amazon.com/blogs/aws/feed/
+  # Removed entirely: the `eng_blogs` theme — Meta Engineering
+  # (https://engineering.fb.com/feed/), Netflix Tech Blog
+  # (https://netflixtechblog.com/feed), AWS News
+  # (https://aws.amazon.com/blogs/aws/feed/).
+  #
+  # Not because they post slowly. Because the interest profile turned against
+  # them: `tech_careers` used to call deep engineering blogs "the work I'd be
+  # doing" and now says the opposite in as many words ("Deep systems-engineering
+  # blog posts do not [count]"), since the goal is business and product roles.
+  # Between them these three won nothing across 11 digests, so nothing is lost
+  # by acting on that. Restore them if the career direction ever changes.
 
   florida:
     # Active NWS warnings statewide — the actually-actionable one for hurricanes,
@@ -101,11 +160,60 @@ themes:
     - name: NHC Atlantic
       url: https://www.nhc.noaa.gov/index-at.xml
     - name: WLRN Local News
-      url: https://www.wlrn.org/local-news.rss
+      # Moved under /tags/ — the old /local-news.rss 404s, and the site-wide
+      # /index.rss the homepage advertises parses to zero entries.
+      url: https://www.wlrn.org/tags/local-news.rss
     - name: Miami New Times
       url: https://www.miaminewtimes.com/miami/Rss.xml
     - name: NBC6 Miami
       url: "https://www.nbcmiami.com/?rss=y"
+    # `florida` now carries "date ideas and things to do in Fort Lauderdale and
+    # Miami" references — going out stopped being a Barcelona-only interest when
+    # "Fort Lauderdale date idea" turned up on the form under this area. Same
+    # back-catalogue behaviour as its Barcelona sibling: 100 entries, all dated,
+    # most of them old, so the lookback does the filtering.
+    - name: Time Out Miami
+      url: https://www.timeout.com/miami/feed.rss
+    #
+    # STILL MISSING HERE: a Broward/Fort Lauderdale daily. Every source above is
+    # Miami-based or statewide. The Sun Sentinel is Broward's actual paper and
+    # is the obvious fix, but https://www.sun-sentinel.com/feed/ and its
+    # /local/broward/ variant both return HTTP 403 to any non-browser agent,
+    # including the one ingest sends. Left out rather than added broken.
+
+  # Things to actually go and do in Barcelona — exhibitions, openings, festivals,
+  # restaurants. Separate from `spain` because it is a different kind of reading:
+  # `spain` is what happened, this is what's on. The big two here (Time Out, La
+  # Vanguardia Comer) publish their back catalogue in the feed, so most of what
+  # they return is years old and the lookback window is what keeps it out.
+  barcelona_dates:
+    - name: Barcelona Secreta
+      url: https://barcelonasecreta.com/feed/
+    # timeout.es, not timeout.com/barcelona: the .com feed carries the same
+    # listicles but stamped with their original publish dates (2019 and older),
+    # so every entry falls outside the lookback and the feed contributes nothing.
+    #
+    # Two of its entries — /que-hacer/el-fin-de-semana-ideal and
+    # /que-hacer/10-cosas-para-hacer-esta-semana — are rolling hub pages: one
+    # URL, re-dated every week, whose body is a grid of cards rather than an
+    # article. They score highest of anything here (the titles are almost the
+    # interest phrases verbatim) and summarize worst, because the extractor
+    # takes the largest text block on the page and that is whatever feature is
+    # promoted at the top. The seen store hides them after one appearance and
+    # the per-article entries behind them are fine, so this is a first-run
+    # wart, not a standing one.
+    - name: Time Out Barcelona
+      url: https://www.timeout.es/barcelona/es/feed.rss
+    - name: La Vanguardia Comer
+      url: https://www.lavanguardia.com/rss/comer.xml
+    - name: Barcelona Cultura
+      url: https://www.barcelona.cat/barcelonacultura/es/rss.xml
+    # Removed: beteve Agenda (https://beteve.cat/agenda/feed/). It was kept on
+    # the theory that it posts in bursts around the weekend and so looks empty
+    # midweek by nature. That no longer holds — checked on a Sunday, its newest
+    # entry was 9.5 days old, and it won nothing across 11 digests. The same
+    # broadcaster's /cultura/ feed is in `spain` below, is fresh, and produced
+    # two of the ten picks on its first run. Superseded rather than lost.
 
   spain:
     - name: El Pais English
@@ -120,3 +228,41 @@ themes:
       url: https://www.lavanguardia.com/rss/local/barcelona.xml
     - name: El Periodico Barcelona
       url: https://www.elperiodico.com/es/rss/barcelona/rss.xml
+    # Catalan-language city and regional news, added for the neighbourhood-level
+    # references (Gràcia, Sant Cugat, FGC/Rodalies) the profile now carries. The
+    # Spanish-language dailies above cover Barcelona as a city; these are closer
+    # to the ground and to the Vallès, which is the commute.
+    #
+    # betevé by section rather than the site-wide https://beteve.cat/feed/. The
+    # site feed is better sourced than anything else here — it produced the
+    # highest-scoring article of its first run, on the Festa Major de Gràcia —
+    # but it also carries `/btv-noticies-migdia/`, the daily TV bulletin. That
+    # entry is the rolling-page problem in its worst form: its summary is the
+    # channel's standing blurb rather than any news, it scored 0.643 on the
+    # strength of the word "Barcelona", and its URL carries an incrementing
+    # number (`-669`) so the seen store can never suppress it — it would take a
+    # slot every single day forever. The section feeds carry none of them.
+    #
+    # /cultura is where the Gràcia festival story came from and feeds
+    # `barcelona_dates`; /societat is the busiest (15/15 inside the lookback);
+    # /mobilitat is small but is the only source pointed at the FGC and Rodalies
+    # commute references.
+    - name: beteve Cultura
+      url: https://beteve.cat/cultura/feed/
+    - name: beteve Societat
+      url: https://beteve.cat/societat/feed/
+    - name: beteve Mobilitat
+      url: https://beteve.cat/mobilitat/feed/
+    # Catalan national/regional daily. Roughly 22 of 25 entries land inside the
+    # lookback, but be aware that about 40% of them carry no usable summary and
+    # are dropped at curate time — it is a volume source, not a quality one.
+    - name: Nacio Digital
+      url: https://www.naciodigital.cat/rss/
+    #
+    # STILL MISSING HERE: anything dedicated to Sant Cugat or to Gràcia by name.
+    # cugat.cat is the Sant Cugat local outlet and it parses, but not one of its
+    # 10 entries carries a date, and ingest deliberately keeps undated entries
+    # (it can't judge their age) — so it would inject the same ten articles into
+    # every run forever rather than ageing out. L'Independent de Gràcia
+    # redirects and then 403s. Both left out; the two Catalan feeds above are
+    # the nearest working substitute.

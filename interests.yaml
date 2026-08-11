@@ -11,17 +11,38 @@
 #   references:  short, concrete phrases — the kind of headline I'd want to see.
 #                Each is embedded and matched on its own, so sharp phrasing here
 #                moves the needle more than long prose does.
+#   avoid:       optional. Phrases for things that look like this area but that I
+#                skip. Scored as max(0, best_reference - lambda * best_avoid), so
+#                a reference can only ever lift an area and an avoid can only
+#                lower it. Deliberately short lists — see the note below.
 #   weight:      multiplier on this area's similarity (1.0 = neutral). Raise to
 #                surface an area more often, lower to bury it.
 #
 # Areas are independent of the feed themes in feeds.yaml: a Hackaday article can
 # win on `ai_open_source`, and a TechCrunch one on `spain`.
+#
+# On `avoid`: keep these few and keep them phrased exactly as the thing I'd skip,
+# not as the category around it. Measured on a live corpus, "Jacksonville weather
+# alert" separates cleanly (0.66 on the alerts I skip, 0.40 on the Broward ones I
+# want); broadening it to "Jacksonville, Orlando, Tampa and north Florida" scored
+# 0.42 against a South Florida hurricane-prep story I *do* want and collapsed the
+# gap. Generalising a negative is how this feature starts narrowing the digest.
+# The full working is in docs/interests-reasoning.md.
+#
+# Weights below are provisional — inferred from how much I wrote per area on the
+# form, not read off it, since I left every 1-5 box blank. They are meant to be
+# argued with.
 
 embedding_model: text-embedding-3-small
 
 areas:
   - name: ai_open_source
-    weight: 1.0
+    # Weight below 1.0 not because I stopped caring but because this is the one
+    # area I left completely blank on the form while it took 32 of ~110 digest
+    # slots over ten days. Much of what it was actually winning — coding agents,
+    # eval tooling — now has its own area in `agentic_tooling`, so leaving this
+    # at 1.0 would keep it absorbing that content by sheer feed volume.
+    weight: 0.9
     description: >
       Updates from the AI world, with a strong pull toward open source and open
       weight work: model releases that actually publish weights, permissive
@@ -35,104 +56,334 @@ areas:
       - "major AI lab announces a new frontier model or capability"
       - "open source AI ecosystem, datasets, and fine-tuning tools"
 
+  - name: agentic_tooling
+    # New. The layer I actually work in every day, and the strongest single ask
+    # in Part 3 of the form ("more things that teach me about ai engineering").
+    # Until now this had to score as `ai_open_source` or lose.
+    weight: 1.15
+    description: >
+      The applied layer above the models: agent frameworks and orchestration,
+      evals and observability, prompt and context engineering, and coding agents
+      as a way of working. I want the practitioner's account — how someone
+      actually structures a project, what broke, what they'd do differently —
+      more than I want a framework's launch announcement.
+    references:
+      - "agent framework, orchestration, or LangGraph tooling and how to use it"
+      - "evaluating and testing LLM applications: evals, benchmarks, observability"
+      - "prompt engineering and context engineering techniques that changed a result"
+      - "getting more out of a coding agent like Claude Code"
+      - "AI engineering as a discipline: what to learn and how to get good at it"
+      - "project ideas for building something real with LLMs"
+      # First-person practitioner register. Several of the headlines I wrote on
+      # the form are blog posts, not news ("This is how I do my claude
+      # projects"), and register measurably shifts embedding similarity. Because
+      # an area scores as the *max* over its references, adding voice variants
+      # alongside the category phrasings above costs nothing and can only help.
+      - "how I structure my AI coding projects, and the workflow that finally stuck"
+      - "what I learned building an agent that actually works in production"
+
   - name: ai_consciousness
-    weight: 1.0
+    weight: 1.1
     description: >
       Research on what is actually going on inside these models: interpretability
       work that finds internal features or steering vectors, and anything
       touching machine consciousness, introspection, or model welfare. The Claude
       emotion-vector paper is the exemplar of what I want more of — empirical
-      work on model internals and inner states, not armchair speculation.
+      work on model internals and inner states, not armchair speculation. The
+      comparison with human cognition is part of the appeal, not a detour.
     references:
       - "interpretability research finding internal features or vectors inside a language model"
       - "research paper on machine consciousness, sentience, or model welfare"
       - "steering model behavior by manipulating activations or emotion vectors"
       - "does the model have inner states, introspection, or self-knowledge"
       - "mechanistic interpretability and probing what a neural network represents"
+      # Added from the form: "I also like the relation between human and ai
+      # thinking / brain processes."
+      - "comparing how language models and human brains process and represent thought"
+      - "what neuroscience and cognitive science say about machine intelligence"
+      # "Anthropic interpretability statement" — a lab publishing a position on
+      # its own models reads differently from a paper about them.
+      - "AI lab publishes a statement or position on model welfare and interpretability"
+      # Guardrails came up on the form as an emotion-vector application, which
+      # is the safety end of the same interpretability work.
+      - "safety guardrail built from a model's internal representations"
 
-  - name: classic_ml_applied
-    weight: 1.0
+  - name: model_architectures
+    # Renamed from `classic_ml_applied`, which was scoped to "pre-transformer"
+    # architectures and to why "the older architecture was the right call". Both
+    # of my strongest asks on the form point the other way — "why transformers
+    # are being replaced by world models", "how an ai architecture works and why
+    # it's important" — so the old description was scoring against the thing it
+    # was meant to find. The applied CNN/U-Net half of it survives intact; what
+    # changed is that the area is now about architectures generally, in both
+    # directions in time.
+    weight: 1.1
     description: >
-      Pre-transformer architectures earning their keep in the real world: CNNs,
-      RNNs, LSTMs, and GANs deployed in production or research where they still
-      beat the fashionable option. I care about the applied engineering story —
-      what was built, on what hardware, and why the older architecture was the
-      right call.
+      How model architectures actually work and where they earn their keep. Two
+      halves that belong together: the explainer — what a given architecture
+      does, why it is shaped that way, and what is replacing it — and the
+      applied story of one deployed somewhere real. CNNs, U-Nets, RNNs and GANs
+      quietly running in production count, and so does whatever comes after the
+      transformer.
     references:
+      - "how a neural network architecture works and why its design matters"
+      - "what comes after transformers: world models, state space models, new architectures"
+      - "comparing architecture variants and what the ablations actually showed"
       - "convolutional neural network deployed in a real world production system"
+      - "U-Net or segmentation model used in medical imaging and diagnosis"
+      - "computer vision model deployed for detection and monitoring in public spaces"
       - "LSTM or recurrent network used for practical forecasting or time series"
       - "GAN used to generate, restore, or upscale real images in industry"
       - "older neural network architecture still outperforming transformers on a task"
-      - "small efficient model running on embedded or edge hardware"
 
-  - name: big_tech_career
+  - name: edge_inference
+    # New, and narrower than the form's suggestion. Two of the three headlines
+    # written under it ("Personal project to make my life better", "Advancement
+    # in esp32 capabilities") are really `embedded_wearables` and are answered
+    # there; what is genuinely uncovered is the third, models running on small
+    # hardware. Inherits "small efficient model running on embedded or edge
+    # hardware", which had been sitting in the old classic_ml_applied.
     weight: 1.0
     description: >
-      Big tech company news read through the lens of wanting to work at one:
-      hiring and headcount, new teams and orgs, reorgs and layoffs, engineering
-      culture, and what the job market for software engineers actually looks
-      like. Deep engineering blog posts about how these companies build their
-      systems count too — that's the work I'd be doing.
+      Machine learning on hardware that has no business running it: quantized
+      and distilled models, NPUs and accelerators, microcontroller ML, and
+      inference that happens on the phone or the board instead of in a
+      datacentre. This is literally what this project is, so the build details
+      matter more than the benchmark table.
     references:
-      - "big tech company hiring, new team, or engineering org change"
-      - "what it is like to work as an engineer at Google, Meta, Apple, Amazon, Microsoft, or Nvidia"
-      - "engineering blog post explaining how a large company built its infrastructure"
-      - "tech layoffs, reorgs, and the software engineering job market"
-      - "big tech earnings, strategy, and where the company is investing next"
+      - "running an AI model locally on a microcontroller, phone, or single board computer"
+      - "small efficient model running on embedded or edge hardware"
+      - "quantization, distillation, or pruning to fit a model on constrained hardware"
+      - "NPU, AI accelerator, or edge inference chip announcement"
+      - "on-device inference instead of sending data to the cloud"
 
   - name: embedded_wearables
-    weight: 1.0
+    # Weight up: five headlines filled in, and the area sits low on the score
+    # scale (median 0.460) for reasons that are about phrasing, not preference.
+    weight: 1.1
     description: >
       Embedded hardware and wearables: new microcontrollers and dev boards,
       teardowns, and low-power design. I want the build details — pinouts, power
-      budgets, displays — not just a product announcement.
+      budgets, displays — not just a product announcement. Someone's own project
+      write-up beats a press release even when the project is smaller.
     references:
       - "new microcontroller, dev board, or SoC announcement"
       - "wearable hardware teardown or DIY build"
       - "e-ink display, low power design, or battery life engineering"
       - "ESP32 or Raspberry Pi project with build details"
+      - "ESP32 project ideas and what to build next"
+      - "building your own fitness tracker or smartwatch from scratch"
+      - "hardware hacking, reverse engineering, and getting into a device"
+      # Same first-person register argument as in `agentic_tooling`. "I have
+      # built an amazing project that nobody has built before" is a person
+      # posting their build, and reads nothing like a parts announcement.
+      - "I built this thing nobody has built before — here is how it works"
+      - "a personal project that made my own day-to-day life better"
+      # "Optimization of my program" on the form is ambiguous between firmware
+      # and software; covered here on the embedded reading and again in
+      # `agentic_tooling` on the other. Flagged in docs/interests-reasoning.md.
+      - "squeezing more speed or battery life out of my own firmware"
+
+  - name: tech_careers
+    # Renamed from `big_tech_career`, and the suggested `landing_the_job` is
+    # merged in rather than added alongside — see docs/interests-reasoning.md.
+    # Two things changed in scope. First, direction: the old description called
+    # deep engineering blogs "the work I'd be doing", and the form says the
+    # opposite ("not into very technical roles", business administration,
+    # business roles, and "How to become a technical SWE" listed as a skip).
+    # Second, the centre of gravity moved from company news to the first-person
+    # account — getting hired, and what the job is actually like once you are.
+    weight: 1.1
+    description: >
+      Working in tech from the outside in: how people actually get hired, what
+      the job is like day to day, and what the market is doing. I am headed for
+      business and product roles rather than engineering ones — I study business
+      administration and would rather drive a coding agent than learn C — so
+      hiring advice, internship and new-grad accounts, and honest write-ups of
+      life inside a big company are the point. Layoffs and headcount matter as
+      market signal. Deep systems-engineering blog posts do not.
+    references:
+      - "how to get hired into a business, product, or strategy role at a big tech company"
+      - "internship and new grad recruiting: applications, interviews, and offers"
+      - "what employees say it is actually like inside a big tech company"
+      - "tech layoffs, hiring freezes, and what the job market is doing"
+      - "career advice for someone early in their tech career"
+      - "landing a job at a hardware or wearables company"
+      - "balancing a career in tech with a life outside it"
+      # First-person register again, and here it is most of what I asked for:
+      # four of the eight headlines across the two merged areas were written as
+      # personal posts rather than as news.
+      - "what I did to land my internship at a big tech company"
+      - "the projects that got me the job, and what I would do differently"
+      - "what I wish I had known at twenty about working in tech"
+    avoid:
+      # From the form's skip box, kept in its original narrow phrasing. It barely
+      # fires on the current corpus (top match 0.32) — recorded as a boundary for
+      # when it does, not as a lever pulling on today's digest.
+      - "how to become a technical software engineer: learning C, algorithms, and LeetCode"
 
   - name: startup_vc
-    weight: 1.0
+    # Weight down slightly: 18 picks over ten days off three half-filled
+    # headline slots, and the form narrows the area rather than expanding it
+    # ("I don't care about specific big name companies"). The references now
+    # lead with the ecosystem and with Barcelona, which is what was actually
+    # asked for, instead of with funding-round wires.
+    weight: 0.9
     description: >
-      Startup and venture business, weighted toward AI and hardware companies:
-      funding rounds, what investors are backing, and the strategy behind a
-      pivot or acquisition.
+      Startup and venture business, weighted toward AI and hardware and toward
+      the scene rather than the scoreboard: who is backing what, accelerators
+      and the companies coming out of them, and the strategy behind a pivot or
+      an acquisition. Barcelona's startup ecosystem is the part I can actually
+      walk into. Announcements about the biggest name-brand companies are not
+      what I am here for.
     references:
       - "startup raises a funding round for AI or hardware"
       - "venture capital investment trends and new fund news"
       - "startup strategy, pivot, or acquisition"
+      - "Y Combinator batch, accelerator demo day, and the startups coming out of it"
+      - "Barcelona startup ecosystem and the 22@ innovation district"
+      # Same cross-language reasoning as in `spain` below: the Barcelona startup
+      # story is as likely to break in Spanish as in English.
+      - "ecosistema emprendedor y startups en Barcelona"
 
   - name: florida
-    weight: 1.0
+    # Weight up: this is one of the two places I live, it carries the things I
+    # would need to act on, and it has been under-picked (10 slots) relative to
+    # that. The "things to go and do" references are new — see the note there.
+    weight: 1.1
     description: >
       What's happening where I live in Fort Lauderdale, tech or not. Major
       consequential events first — hurricanes, flooding, and other natural
       disasters I'd need to act on — then the broader South Florida news and
-      Miami-area tech and business scene.
+      Miami-area tech and business scene, and things worth actually going out
+      and doing here.
     references:
       - "hurricane, tropical storm, or major flooding in South Florida"
       - "Fort Lauderdale and Broward County local news"
       - "Miami tech scene and companies relocating to South Florida"
       - "major emergency or evacuation affecting Florida residents"
+      - "crime, shooting, or police incident in Fort Lauderdale"
+      # "Fort Lauderdale date idea" was written under this area on the form, so
+      # going out is not a Barcelona-only interest. It lives here rather than in
+      # a merged city-agnostic area because `barcelona_dates` carries a language
+      # handicap that this does not, and the two therefore need different
+      # weights to mean the same thing. Argued in docs/interests-reasoning.md.
+      - "date ideas and things to do in Fort Lauderdale and Miami this weekend"
+      - "new restaurant, bar, or exhibition opening in South Florida"
+    avoid:
+      # Straight from the form's skip box, and left in exactly that phrasing.
+      # This is the one negative doing real work today: the current digest's
+      # Florida pick is a Jacksonville thunderstorm alert. Measured on the live
+      # corpus it scores 0.66 against the Jacksonville alerts and 0.40 against
+      # the Broward ones, which is the discrimination the positive references
+      # cannot manage on their own — "Fort Lauderdale and Broward County local
+      # news" actually scores the Jacksonville alert *higher* (0.52) than a
+      # Miami one (0.41), because the embedding sees "Florida coastal city
+      # weather" and not the city name.
+      - "Jacksonville weather alert"
 
   - name: spain
     weight: 1.0
     description: >
       What's happening where I also live, in Barcelona, tech or not. Major
-      consequential events first — wildfires, floods, heat waves, strikes,
-      elections — then Barcelona city news and the Spanish tech and startup
-      scene.
+      consequential events first — floods, heat waves, strikes, elections —
+      then Barcelona city news and the Spanish tech and startup scene. I live in
+      Gràcia and commute to Sant Cugat, so news about those two places and the
+      lines between them counts as local, not regional.
     references:
       - "Barcelona local news and city government"
       - "major events in Spain: elections, strikes, wildfires, floods, heat waves"
       - "Spanish tech and startup scene in Barcelona and Madrid"
       - "travel disruption or transit strike affecting Spain"
+      # Gràcia and Sant Cugat by name, in both languages. Neighbourhood-level
+      # detail is where the embedding is weakest — a story about Gràcia rarely
+      # says "Barcelona neighbourhood", it just says "Gràcia" — so the place
+      # names have to appear literally in a reference to be matchable at all.
+      - "noticias del barrio de Gràcia en Barcelona"
+      - "Sant Cugat del Vallès local news and town council"
+      - "FGC, Rodalies, and Vallès commuter rail service and disruption"
       # Two of the Barcelona feeds (La Vanguardia, El Periodico) publish in
       # Spanish. Cross-language embedding similarity is weaker than same-language,
       # so without these the Spanish-language articles score systematically lower
       # than English ones and get buried — backwards from what I want.
       - "noticias de Barcelona y Cataluña"
-      - "incendio forestal, inundaciones u ola de calor en España"
+      # Narrowed from "en España" to Catalonia. Part 3 asks for less Spain
+      # wildfire coverage, but wildfires near me are exactly the kind of thing
+      # this area exists to catch, so this is not in `avoid` — it is a volume
+      # problem, not a relevance one, and the honest fix is to stop rewarding
+      # fires several hundred kilometres away as strongly as local ones. On the
+      # current corpus "wildfire burning in Spain" scores 0.62 on the one real
+      # fire story and 0.32 on everything else: an avoid entry here would be a
+      # clean kill switch on coverage I would want during a bad summer.
+      - "incendio forestal, inundaciones u ola de calor en Cataluña"
       - "huelga de transporte o interrupción de vuelos en España"
       - "elecciones y política española"
+
+  - name: barcelona_dates
+    # Weight 1.2, and this one is not a preference guess — it is the calibration
+    # correction from docs/ranking-improvements.md. This area's best score ever
+    # recorded (0.437) sits below ai_open_source's *median* (0.522), because
+    # Spanish and Catalan score lower against an English-dominant model and
+    # because event listings are specific instances matched against general
+    # category phrasings. 1.2x is what the analysis puts parity at. It buys the
+    # area the chance to win a slot on merit; it does not hand it one.
+    weight: 1.2
+    description: >
+      Things to actually go and do in Barcelona with someone — a plan for a
+      Friday rather than a headline. Exhibitions, concerts, festivals and street
+      parties, unusual one-off experiences, and new places worth booking. The
+      artsy end of it, and free or cheap before expensive. What I want is the
+      specific and the datable: a place with a name, a show with a run, a
+      weekend with a programme. General travel writing about Spain, and
+      restaurant reviews of places in other cities, are not this.
+    references:
+      - "best new restaurants and bars to book in Barcelona right now"
+      - "exhibition, concert, or theatre show on in Barcelona this week"
+      - "what to do in Barcelona this weekend: plans, festivals, and street parties"
+      - "romantic evening in Barcelona: rooftop bar, viewpoint, or dinner spot"
+      # New, from the form: artsy, cheap, and deliberately odd. The day trip
+      # references that used to sit here have been removed rather than added
+      # around — "Drive to these mountains near Barcelona" was listed as a skip,
+      # and not one of the five headlines written for this area leaves the city.
+      - "free and cheap things to do in Barcelona this week"
+      - "unusual or offbeat date idea in Barcelona"
+      - "tea ceremony, meditation, or a quiet unusual experience in Barcelona"
+      - "art gallery, independent cinema, or creative workshop in Barcelona"
+      # Every feed behind this area publishes in Spanish or Catalan, so unlike
+      # the tech areas it lives or dies on these phrases — the English ones
+      # above are effectively the runner-up, not the match. Same reasoning as
+      # the Spanish references in `spain`, but load-bearing here rather than a
+      # correction.
+      - "los mejores planes en Barcelona este fin de semana"
+      - "nuevo restaurante, bar o terraza que abre en Barcelona"
+      - "exposición, concierto o espectáculo en Barcelona"
+      - "planes gratis o baratos en Barcelona"
+      - "què fer a Barcelona aquest cap de setmana: agenda i activitats"
+      - "exposicions, concerts i activitats culturals a Barcelona"
+    avoid:
+      # The form's skip. It is diffuse on the current corpus (top match 0.40,
+      # against nothing in particular) and is doing far less work than removing
+      # the two day-trip references did. Kept as a boundary so a "escape the
+      # city to the mountains" listicle cannot win on the weekend-plans
+      # references that remain.
+      - "drive out of Barcelona to the mountains or a nature reserve"
+
+  - name: deep_reads
+    # Kept to my own definition from the form — "research papers on any of the
+    # above topics" — rather than the long-form quality bar this area was
+    # originally proposed as. That makes it a register, not a subject: it will
+    # often tie with whichever topic area the paper belongs to, and the tie is
+    # settled by weight. Held below 1.0 for that reason. arXiv is already in
+    # feeds.yaml, so there is a supply of these to match against.
+    weight: 0.95
+    description: >
+      Primary research rather than coverage of research: papers and preprints on
+      the things in this profile — machine learning architectures and
+      interpretability, agents and evaluation, embedded and on-device systems.
+      The paper itself, or a careful walkthrough of one, in preference to a news
+      article about it.
+    references:
+      - "arXiv preprint or research paper on machine learning"
+      - "new research paper on model architectures, training, or evaluation"
+      - "paper walkthrough explaining a result and its method in detail"
+      - "academic research on embedded systems, sensors, or on-device computing"

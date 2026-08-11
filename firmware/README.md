@@ -39,6 +39,44 @@ Reach screens that need input without touching anything:
 ./sim --shot out.bmp --tap 120 --swipe left    # open a story, go to the next
 ```
 
+`--tap` runs the animation out before the shot, so it can only ever show where
+a transition *ends* — which is the part that was never in doubt. To see the
+transition itself, `--tap-hold` returns as soon as the click is delivered and
+`--settle N` advances N frames of 20 ms:
+
+```bash
+./sim --shot mid.bmp --tap-hold 300 --settle 4   # 4 frames into the expand
+```
+
+Two flags for checking animations by measurement rather than by eye —
+`--geom` prints the detail view's rect every frame, and `--time` prints what
+each frame costs:
+
+```bash
+./sim --shot x.bmp --geom --tap-hold 300 --settle 30   # per-frame travel
+./sim --shot x.bmp --time --tap-hold 300 --settle 12   # per-frame cost
+```
+
+`--geom` exists because you cannot read a transition off the pixels: the deck
+behind it is the same tint as the card, and its header rule and ledges sit at
+exactly the edges you would be trying to measure, so a scanline finds the
+chrome and reports a confident wrong answer. Ask the object where it is.
+
+`--film PREFIX` writes every frame from that point on, which is the only way to
+catch a one-frame flicker — `--settle` cannot reach inside a tap, because the
+press and release run within `inject_tap`:
+
+```bash
+./sim --shot x.bmp --film /tmp/f/open --tap-hold 300 --settle 28
+```
+
+The sim uses **two full-screen buffers with `full_refresh = 1`**, matching
+`lvgl_port.c`. It used to use a single 172×80 partial buffer, which draws the
+same pixels by a different path — partial mode redraws invalidated rectangles,
+full refresh redraws everything and swaps buffers — so ordering bugs around
+hide/move/invalidate could appear on the board and not here. Keep these in
+step with the driver.
+
 The sample articles cover the cases that break layout — a very long title, a
 one-word title, an accented Spanish headline, an empty summary, and an
 interest area missing from `AREA_STYLES`.
@@ -58,21 +96,85 @@ a glob is passed to esptool verbatim, which breaks every upload. "No serial
 data received" usually means the board isn't enumerated at all; check
 `ls /dev/cu.usbmodem*` before assuming a fault.
 
-## The two views
+## The three views
 
-**LIST** — fixed header (`NEWS` + status) over a scrollable column of cards,
-best-scoring story first. Each card shows the interest area as a coloured
-badge, the score, a 3-line title (ellipsised), the source, and a score bar
-whose width maps the 0.25–0.60 cosine band to the full card width.
+This is the Mac widget's card deck, rebuilt in LVGL for the 172×640 panel —
+same layout, same wallpaper palette, same interest-area labels. See
+[`../desktop/README.md`](../desktop/README.md) for the deck's design and
+[`CLAUDE.md`](CLAUDE.md) for what LVGL could not reproduce.
 
-**DETAIL** — tap any card. Full untruncated title at 20 pt, source and exact
-score, then the summary in a scrollable body. `BACK` returns to the list.
+**DECK** — fixed header (`NEWS` + status), one story at a time as a card in
+its interest area's colour, three coloured ledges behind it for the rest of
+the digest, and a nav bar with `‹`, a counter and `›`. The card shows the area
+as a badge, the score as a number and as a bar mapping the 0.25–0.60 cosine
+band across the card, the headline, a short excerpt and the source. Flip with
+the nav buttons or by swiping left and right.
+
+**LIST** — swipe up. The whole digest as a scrollable column, best-scoring
+first, in the same card styling but with headlines wrapped in full rather than
+clipped to fit a fixed card. This is where you go when the deck's card cut off
+the part of the headline that said what the story was. Swipe right (or down)
+to go back.
+
+**DETAIL** — tap any card, from either view. Full untruncated title at 20 pt,
+source and exact score, the summary in a scrollable body, and `LISTEN` pinned
+at the bottom so it is reachable without paging to the end. Swipe right to go
+back — to whichever view you opened it from — or swipe left for the next story.
+
+The card **expands into** the story: the detail view starts at the tapped
+card's exact rect, in its colour and at its corner radius, and grows to fill
+the panel. Swiping back shrinks it into whichever card it came from, wherever
+that card has since scrolled to. It used to slide in from the right, which read
+as arriving at a different screen instead of opening the thing you touched —
+on a panel 172 px wide that thread is worth more than it is on a phone. Paging
+from one story to the next still slides sideways, because there is no card on
+screen for it to grow out of.
 
 Touch drag scrolls; LVGL suppresses the click when a press becomes a drag, so
 scrolling past a card never opens it.
 
-The **BOOT** button (GPIO 0) is wired as: *back to the list* when a story is
-open, *manual refresh* when already on the list.
+**The panel sits dim and lights when you pick it up.** The QMI8658 IMU drives
+an 8-bit PWM backlight: 25 s without motion or input drops it to 12% over a
+short ramp, and any real handling brings it back inside a poll or two. Touch,
+the BOOT button and playing narration all count as "in use", so reading a long
+story without moving the device will not dim it. Thresholds and the timeout are
+constants at the top of `src/imu_wake.cpp`, chosen from measurements on the
+board — see CLAUDE.md.
+
+**Turn the board and the UI follows — all four orientations.** The same
+accelerometer that drives the auto-dim reads which in-plane axis gravity lies
+along: X is the 640 px edge, Y is the 172 px edge, Z is the screen normal and
+only ever says how flat the panel is.
+
+It takes a deliberate turn, not a nudge. The panel must be tilted at least
+~15° up from flat before the reading counts, the winning axis must beat the
+other by 30%, and the new orientation must hold for 700 ms. Lying flat it has
+no opinion at all and keeps whatever is on screen — **this is physics, not a
+threshold to tune**: with the screen horizontal, gravity has no in-plane
+component, so spinning the board on the desk is undetectable by an
+accelerometer at any sensitivity. Tilt it up to rotate it.
+
+The two kinds of rotation cost very different amounts:
+
+- **Portrait ↔ portrait (0°↔180°)** is free. Same logical resolution, same
+  widgets; only the transform already running every frame in
+  `example_lvgl_flush_cb` changes, and the screen is invalidated to force a
+  redraw.
+- **Portrait ↔ landscape** is a **full rebuild**. 640×172 is a second layout,
+  not a reflow — the deck loses its peek ledges, the card goes horizontal and
+  the article splits into newspaper columns — so `news_ui_relayout()` tears the
+  widget tree down and builds it again, restoring which story you were on and
+  which view you were in. That is why the 700 ms dwell matters: every spurious
+  landscape decision is a rebuild, not a redraw.
+
+In landscape the article body runs down **two ~300 px columns and scrolls
+sideways**, showing roughly twice what a single 640-wide column would at
+172 px tall. The break between columns is measured with `lv_txt_get_size()`
+rather than estimated from character counts, and snapped to a space so it is
+UTF-8 safe.
+
+The **BOOT** button (GPIO 0) is wired as: *back* when a story is open,
+*manual refresh* on the deck or the list. It is the widget's ↻ button.
 
 That refresh is the real thing — it asks the backend to re-run the whole
 pipeline (`POST /refresh`), waits for it by polling `/health`, then re-fetches.
@@ -124,18 +226,40 @@ Polling interval is 15 min (`NEWS_REFRESH_INTERVAL_MS`).
 
 | area | badge | colour |
 |---|---|---|
-| `ai_open_source` | OPEN SRC | green |
-| `ai_consciousness` | INTERP | purple |
-| `classic_ml_applied` | CLASSIC | teal |
-| `big_tech_career` | BIG TECH | blue |
-| `embedded_wearables` | EMBEDDED | orange |
-| `startup_vc` | STARTUP | yellow |
-| `florida` | FLORIDA | coral |
-| `spain` | SPAIN | pink |
+| `ai_open_source` | OPEN SRC | pale yellow |
+| `agentic_tooling` | AGENTS | sage |
+| `ai_consciousness` | INTERP | amber |
+| `model_architectures` | ARCH | light blue |
+| `edge_inference` | EDGE ML | green-teal |
+| `embedded_wearables` | EMBEDDED | orange-amber |
+| `tech_careers` | CAREERS | blue |
+| `startup_vc` | STARTUP | gold |
+| `florida` | FLORIDA | orange |
+| `spain` | SPAIN | dark coral |
+| `barcelona_dates` | BCN PLAN | salmon |
+| `deep_reads` | PAPERS | lavender |
+
+The colour names above are the wallpaper palette the widget and the device
+share. They previously read green/purple/teal, which described the old
+pomodoro-family badge colours and had been wrong since the card started being
+painted in the tint rather than just the badge.
 
 An unrecognised area falls back to a grey `NEWS` badge, so adding an area to
 `interests.yaml` degrades gracefully instead of breaking the display. To give
-it real styling, add a row to `AREA_STYLES[]` in `src/news_ui.cpp`.
+it real styling, add a row to `AREA_STYLES[]` in `src/news_ui.cpp` **and** to
+`AreaStyle.table` in `desktop/Sources/ESPNewsWidget/Theme.swift`.
+
+Graceful is not the same as visible: renaming or adding areas without updating
+both tables puts most of a digest behind that one badge, and the deck reads as
+a wall of grey `NEWS` cards. Several `NEWS` badges at once is the symptom of a
+stale table, and it is the only one.
+
+`wildcard: true` on an article overrides all of that: the backend appends one
+mid-ranked story to every digest — drawn at random from the 40th–70th percentile
+of the scores, not chosen by them — and it gets the `WILDCARD` badge
+and the one cool tint on the deck whatever its area says. Use `article_style()`
+rather than `area_style()` anywhere a whole article is in hand — that is the
+only function that knows the flag outranks the area.
 
 ## Structure
 
@@ -149,8 +273,8 @@ src/main.cpp             init order
 ```
 
 `src/lvgl_port.c` has the usual single edit: `news_ui_create()` in place of
-`pomodoro_ui_create()`. Its `lvgl_port_set_rotation()` no longer rebuilds the
-UI — this project is portrait-only and nothing calls it.
+`pomodoro_ui_create()`. Its `lvgl_port_set_rotation()` is now called — by the
+IMU, to flip the panel end over end. It has a `_locked` twin; see below.
 
 ## LVGL notes
 

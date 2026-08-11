@@ -89,10 +89,12 @@ final class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
 // MARK: - Delegate
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var panel: NewsPanel!
+    private var statusItem: NSStatusItem?
     private let store = DigestStore(baseURL: resolveBaseURL())
+    private let learn = LearnStore(baseURL: resolveBaseURL())
     private let controller = PanelController()
 
     // One card plus its stack, and nothing else. The list this replaced
@@ -107,6 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         buildMenu()
+        buildStatusItem()
         buildPanel()
     }
 
@@ -165,7 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.apply()
 
         panel.contentView = ClickThroughHostingView(
-            rootView: RootView(store: store, controller: controller)
+            rootView: RootView(store: store, learn: learn, controller: controller)
         )
         // Hover highlighting needs these even when the app is not active.
         panel.acceptsMouseMovedEvents = true
@@ -233,6 +236,92 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.items.forEach { $0.target = ($0.action == #selector(NSApplication.terminate(_:))) ? nil : self }
     }
 
+    // MARK: Status item
+    //
+    // The only chrome this app has. Everything else lives either in a main
+    // menu no one can see — an .accessory app has no menu bar entry — or in a
+    // right-click on the widget's own header, which you have to know about.
+    // With the panel at the desktop layer and hidden behind windows most of
+    // the time, "how do I get at it" otherwise has no answer.
+
+    private func buildStatusItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.button?.image = NSImage(
+            systemSymbolName: "newspaper",
+            accessibilityDescription: "ESP News"
+        )
+        // Template mode is what makes it follow the menu bar's own light and
+        // dark appearance instead of staying one colour and vanishing in one
+        // of them.
+        item.button?.image?.isTemplate = true
+
+        let menu = NSMenu()
+        menu.delegate = self          // states are refreshed in menuNeedsUpdate
+        item.menu = menu
+        statusItem = item
+    }
+
+    /// Rebuilt on every open rather than kept in sync.
+    ///
+    /// Login-item state can be changed behind the app's back in System
+    /// Settings, and placement can be changed from the header's context menu,
+    /// so anything cached here drifts. Rebuilding a six-item menu costs
+    /// nothing and cannot be wrong.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+
+        let visible = panel?.isVisible ?? false
+        add(menu, visible ? "Hide Panel" : "Show Panel", #selector(togglePanel))
+
+        menu.addItem(.separator())
+        add(menu, "Refresh Digest", #selector(refresh), key: "r")
+        add(menu, "Reload From Backend", #selector(reload))
+
+        menu.addItem(.separator())
+        for placement in PanelController.Placement.allCases {
+            let entry = add(menu, placement.title, #selector(choosePlacement(_:)))
+            entry.representedObject = placement.rawValue
+            entry.state = (controller.placement == placement) ? .on : .off
+        }
+
+        menu.addItem(.separator())
+        let login = add(menu, "Open at Login", #selector(toggleLoginItem))
+        login.state = LoginItem.isEnabled ? .on : .off
+        // Unbundled builds cannot register — see LoginItem. Showing the item
+        // greyed rather than hiding it is the honest thing: it says the
+        // feature exists and this build cannot do it.
+        login.isEnabled = LoginItem.available
+
+        menu.addItem(.separator())
+        add(menu, "Quit ESP News", #selector(NSApplication.terminate(_:)), key: "q")
+    }
+
+    @discardableResult
+    private func add(_ menu: NSMenu, _ title: String,
+                     _ action: Selector, key: String = "") -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        // nil target for terminate so it walks the responder chain to NSApp;
+        // everything else is handled here whether or not the panel is key.
+        item.target = (action == #selector(NSApplication.terminate(_:))) ? nil : self
+        menu.addItem(item)
+        return item
+    }
+
+    @objc private func togglePanel() {
+        guard let panel else { return }
+        if panel.isVisible { panel.orderOut(nil) } else { panel.orderFront(nil) }
+    }
+
+    @objc private func choosePlacement(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let placement = PanelController.Placement(rawValue: raw) else { return }
+        controller.placement = placement
+    }
+
+    @objc private func toggleLoginItem() {
+        LoginItem.set(!LoginItem.isEnabled)
+    }
+
     @objc private func refresh() { Task { await store.rebuild() } }
     @objc private func reload()  { Task { await store.load() } }
     @objc private func togglePlacement() { controller.toggle() }
@@ -252,6 +341,57 @@ MainActor.assumeIsolated {
                               offline: args.contains("--offline"),
                               baseURL: resolveBaseURL())
         exit(ok ? 0 : 1)
+    }
+
+    // --learn-check drives a whole session against a running backend and
+    // prints each step, then exits.
+    //
+    // Snapshots prove the layout and cannot prove the wire types: a renamed
+    // JSON field decodes to nothing and shows up as an empty screen at the one
+    // moment it costs fifteen minutes of typing. This walks every /learn
+    // endpoint against the real thing, so that failure surfaces here instead.
+    // It does spend one real grading call.
+    //
+    //     swift run ESPNewsWidget --learn-check [http://127.0.0.1:8010]
+    if let i = args.firstIndex(of: "--learn-check") {
+        let raw = (i + 1 < args.count && !args[i + 1].hasPrefix("--")) ? args[i + 1] : nil
+        let base = raw.flatMap(URL.init(string:)) ?? resolveBaseURL()
+        LearnCheck.run(baseURL: base)   // never returns
+    }
+
+    // --login-item [on|off|status] reads or sets the Open at Login state and
+    // exits, without ever showing a panel.
+    //
+    // The menu item is still the normal way to do this. This exists because
+    // SMAppService can only register `Bundle.main` — an app registers itself,
+    // and there is no system command that can do it on another app's behalf —
+    // so setting it up from a script or a fresh install otherwise means
+    // launching the widget and clicking through a menu.
+    //
+    // Run the copy you actually want registered: launching the executable
+    // inside a bundle is enough for Bundle.main to resolve to that .app, and
+    // whichever path you run is the one that starts at login.
+    if let i = args.firstIndex(of: "--login-item") {
+        let verb = (i + 1 < args.count && !args[i + 1].hasPrefix("--")) ? args[i + 1] : "status"
+        guard LoginItem.available else {
+            let message = "login-item: unavailable — this is not a bundled build, so "
+                + "there is nothing for SMAppService to register. Use the installed .app.\n"
+            FileHandle.standardError.write(Data(message.utf8))
+            exit(1)
+        }
+        switch verb {
+        case "on":     _ = LoginItem.set(true)
+        case "off":    _ = LoginItem.set(false)
+        case "status": break
+        default:
+            FileHandle.standardError.write(Data("login-item: expected on, off, or status\n".utf8))
+            exit(2)
+        }
+        let enabled = LoginItem.isEnabled
+        print("login item: \(enabled ? "enabled" : "disabled") (\(Bundle.main.bundleURL.path))")
+        // Non-zero when the state asked for was not the state achieved —
+        // registration can fail, and a silent success would be a lie.
+        exit(verb == "status" || enabled == (verb == "on") ? 0 : 1)
     }
 
     let app = NSApplication.shared

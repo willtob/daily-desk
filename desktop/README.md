@@ -73,10 +73,30 @@ defaults write com.willtobin.esp-news-widget baseURL http://127.0.0.1:8010
 | LISTEN | streams `/audio/{i}.pcm` and plays it |
 | ↻, or `⌘R` | `POST /refresh` — re-runs the whole pipeline, ~30 s |
 | `⌘L` | re-read the digest without re-running anything |
-| Right-click header | refresh, reload, placement, quit |
+| Menu bar 📰 | show/hide, refresh, placement, open at login, quit |
+| Right-click header | refresh, reload, placement, open at login, quit |
 | `⌘D` | desktop ⇄ floating |
 | `⌘Q` | quit |
+| Two-finger swipe ⇠⇢ | next / previous story, on the deck or with one open |
+| `⌘1` / `⌘2`, or the header wordmark | NEWS ⇄ LEARN |
 | Drag anywhere | move the widget |
+
+A two-finger swipe is not a gesture in AppKit's sense — it is a stream of
+`scrollWheel` events with precise deltas and a phase, which SwiftUI on macOS 14
+cannot see. `TrackpadPager` reads them through a local event monitor, which
+also keeps it out of a fight with the article's `NSScrollView`: it takes only
+horizontal movement, and only when that beats the vertical by 1.6×, so reading
+a long story never pages the deck. One flick produces dozens of events plus a
+momentum tail, so it fires once and latches until the gesture ends — summing
+deltas naively pages ten stories per swipe. Direction is normalised against
+`isDirectionInvertedFromDevice`, so swipe-left is the next story whichever way
+natural scrolling is set.
+
+Run with `ESP_NEWS_TRACE_SCROLL=1` to log what the monitor receives. That
+exists because the interesting question is not the arithmetic but whether a
+panel at the *desktop* window level is sent scroll events at all — and if it
+is not, the symptom is simply nothing happening, which looks identical to a
+threshold being wrong.
 
 The keys only reach a window that can take focus, which in desktop placement
 it never does — that is why the deck is driven by on-screen buttons and the
@@ -86,6 +106,74 @@ The ↻ button is the BOOT button. It matters that it re-runs the pipeline
 rather than re-fetching `digest.json`: fetching RSS only happens when the
 pipeline runs, so a plain re-fetch would redraw the same stories and look like
 the button did nothing.
+
+### Opening a story
+
+The card does not slide aside and the story does not arrive from an edge: the
+story *is* the card, opened out. It starts at the tapped card's exact rect, in
+its tint and at its corner radius, and grows to fill the panel; closing shrinks
+it back into the card it came from. The same transition as the ESP32 panel,
+which is where it was worked out — see `firmware/WORKING-NOTES.md`.
+
+Two nested frames do it, and the order is load-bearing. The inner one lays the
+story out at the **panel's** size, so the text is wrapped for where it is
+going; the outer one is the window that grows, anchored top-left, with the rest
+clipped away. Laying the story out at each intermediate size instead would
+re-wrap every line on every frame and the headline would visibly reflow the
+whole way open. On the firmware this falls out of LVGL clipping children to
+their parent's rectangle; in SwiftUI it has to be asked for.
+
+### Being a widget rather than an app
+
+| Behaviour | Notes |
+|---|---|
+| Sits at the desktop layer | behind every window, pinned across Spaces, no shadow |
+| Fades when unused | drops to 55% when the pointer is elsewhere, full on hover. Desktop placement only — floating is an explicit "show me this now" |
+| Snaps to screen edges | within 18 pt of an edge it takes a 20 pt margin, so it lines up with the stock widgets. Snaps to `visibleFrame`, so "top" is below the menu bar and "bottom" is above the Dock |
+| Opens at login | `SMAppService`, toggled from either menu |
+| No Dock icon | `.accessory` policy, so the menu bar item is the only chrome |
+
+**Open at login only works from a bundle.** `make dev` runs a bare executable
+with no `Info.plist`, `SMAppService` has nothing to register, and the menu item
+is correctly greyed out. Use `make run` or `make install`. The menu reads the
+state back from the system every time it opens rather than caching it, because
+it can be changed behind the app's back in System Settings → General → Login
+Items, and a checkmark that disagrees with reality is worse than none.
+
+The same switch from the command line, for setting up a fresh install without
+launching the panel and clicking through a menu:
+
+```bash
+"/Applications/ESP News.app/Contents/MacOS/ESPNewsWidget" --login-item on
+"/Applications/ESP News.app/Contents/MacOS/ESPNewsWidget" --login-item status
+```
+
+**Run the copy you want registered.** `SMAppService` can only register
+`Bundle.main` — an app registers itself, and no system command can do it on
+another app's behalf — so whichever bundle you run that against is the one that
+starts at login. Registering `build/ESP News.app` and then running
+`make install` leaves the login item pointing at a path `make clean` deletes.
+
+## Markdown in summaries
+
+Since Phase 9c the summarizer may emit a two-item subset — `**bold**` for the
+few figures worth spotting, and `- ` bullets when the piece really is a list —
+with blank-line paragraphs. This panel renders all of it; see
+`src/esp_news/markdown.py` for why the subset is that narrow, and note that the
+ESP32 cannot render any of it (an LVGL label draws in exactly one font) so it
+strips instead.
+
+Parsing is deliberately `.inlineOnlyPreservingWhitespace`. Full Markdown would
+read `C#` at the start of a line as a heading and `1.` as an ordered list, and
+this is a news digest where both occur in real prose — as do the summaries
+already cached under the older prompt, written with no thought for Markdown at
+all. Inline-only interprets `**bold**` and leaves every block-level character
+alone; bullets are found by a narrower rule in `Paragraphs.swift`. CommonMark
+already declines to emphasise intra-word underscores, so `snake_case_names`
+survives without special handling.
+
+Card excerpts are flattened back to plain prose: two clipped lines have no room
+to be anything else, and a list rendered into them reads as a broken sentence.
 
 ## The deck
 
@@ -243,6 +331,66 @@ front-to-back #65  Finder     layer=-2147483603   1470x956
 
 Same layer, or listed after Finder, means the widget is buried.
 
+## The learning tab
+
+The panel's second tab, against the backend's `/learn` endpoints: it draws a
+random ML/AI topic from `topics.yaml`, runs a fifteen-minute timer, takes a
+typed explanation, and has an LLM grade it against a per-topic checklist the
+client never sees. Streaks live in `learn.db` on the backend side.
+
+```
+TOPIC ──Start──▶ TIMER ──Done / expiry──▶ EXPLAIN ──Submit──▶ GRADING ──▶ RESULT
+  ▲                │                         ▲                    │          │
+  └────Cancel──────┘                         └────on error────────┘          │
+  └───────────────────────────Next topic ◀───────────────────────────────────┘
+```
+
+**The timer is the widget's own border**, not a ring inside it — an accent line
+around the shell that empties from the top as the fifteen minutes run down,
+which is what iOS does on the Dynamic Island. It costs no vertical space, which
+on a 300 pt panel is the difference between the countdown being headline-sized
+and timer-sized.
+
+Three things in here are load-bearing and easy to undo:
+
+- **The countdown is a deadline, not a counter.** `LearnStore` keeps an
+  absolute `Date` and derives `remaining` from it. Decrementing a stored number
+  instead loses time whenever the app is busy or the display sleeps, silently,
+  so a fifteen-minute timer runs eighteen and the only symptom is that the
+  session felt long.
+- **The explanation survives everything except an explicit new session** — a
+  grading failure returns to the editor with the text still in it. It is
+  fifteen minutes of work and the one thing here the backend cannot re-issue.
+- **`RootView`'s key handlers are scoped to the news tab.** Unscoped, the space
+  bar flips a card instead of typing a space and the arrow keys page the deck
+  instead of moving the caret, while you are mid-sentence in the editor.
+  Returning `.ignored` is what lets the key reach the text view.
+
+`TimerBorder`'s `0.75` offset is the one piece of undocumented geometry.
+SwiftUI's `RoundedRectangle` path starts at the *middle of the right edge* and
+runs clockwise — measured off the snapshots, not assumed — so trimming from
+zero parks the gap on the right-hand edge. Top-centre works out to exactly
+three quarters of the way round for any width, height and corner radius, since
+`P = 2[(w-2r) + (h-2r) + πr]` and the distance from mid-right to top-centre is
+`1.5[(w-2r) + (h-2r) + πr]`. The `timer-sweep-*.png` snapshots exist to catch a
+regression in it, because the failure is a quiet cosmetic wrong rather than a
+crash.
+
+### Checking it against a live backend
+
+```bash
+swift run ESPNewsWidget --learn-check http://127.0.0.1:8010
+```
+
+Walks every `/learn` endpoint in order and prints ok/FAIL per step, including
+that a second grade on the same session is refused with a 409. Snapshots prove
+the layout and cannot prove the wire types: a renamed JSON field decodes to an
+empty list on a screen that still looks perfect, and it would surface at the
+one moment in this app that costs fifteen minutes of typing to reach.
+
+**It writes a real graded session** into `learn.db` and so moves the streak and
+the average. Point it at a scratch backend, not the one keeping your streak.
+
 ## Snapshots
 
 Same motivation as `firmware/sim/`: looking at the UI should cost seconds.
@@ -258,10 +406,17 @@ is judged against something like what it will sit on. Three deck positions
 rather than one, because the tints and the peek stack change under you as it
 advances and a single frame proves nothing about either.
 
+Plus `learn-*.png` for the six learning screens and `timer-sweep-*.png` for the
+border trace at four points in a run. Those screens are only reachable by
+living through a fifteen-minute session, which is exactly what makes stills of
+them worth having; `LearnStore.posed` puts a store straight into a phase.
+
 These render the real views, not copies — `DetailView` takes a `scrollable`
 flag that swaps the `ScrollView` for a plain top-aligned stack, because
 `ImageRenderer` does not lay out scroll content and would otherwise hand back
-an empty rectangle.
+an empty rectangle. `LearnView` takes the same flag for the same reason twice
+over: `ImageRenderer` draws a `TextEditor` and a `ProgressView` as a yellow
+"not allowed" badge that fills the panel and hides the whole layout behind it.
 
 **What a snapshot cannot show is the flip**, which is most of the design. For
 that, run it.
@@ -275,19 +430,29 @@ screencapture -x -o -l $(...window id from CGWindowListCopyWindowInfo...) out.pn
 
 ## What is shared with the firmware, and what is not
 
-The interest-area *keys and labels* are shared with `AREA_STYLES` in
+The interest-area *keys, labels and colours* are shared with `AREA_STYLES` in
 `firmware/src/news_ui.cpp`, as is the score band. **Adding an interest area to
 `interests.yaml` means adding it in both places.** An unknown area falls back
 to a neutral `NEWS` card rather than disappearing.
 
-The colours are deliberately not shared any more. The device paints a small
-badge on a dark card and needs eight hues that separate at badge size; this
-paints the whole card in a colour taken from the wallpaper behind it. Same
-information, different medium.
+The colours used to be deliberately unshared — the device painted a small
+badge on a dark navy card, this painted the whole card — but the firmware has
+since taken this deck wholesale onto the 172×640 panel and paints whole cards
+too, so both now run the same wallpaper palette. A tint that fails on one is a
+bug on the other.
+
+**The deck itself is shared as a design, not as code.** The device rebuilds it
+in LVGL, and two things did not survive the trip: there is no 3D flip and no
+blur, because LVGL 8 has neither, and scaling a card is impossible in practice
+because LVGL renders transformed objects through a full-size intermediate
+buffer it cannot afford. Depth over there is real geometry — narrower, lower
+ledges — plus a slide and a fade. `firmware/CLAUDE.md` has the details.
 
 Type weight diverges for the same reason it always did: LVGL ships Montserrat
 in one weight, so the device builds hierarchy from size and colour alone,
-while the whole San Francisco family is available here.
+while the whole San Francisco family is available here. The device also runs
+its ink opacities a few points higher, because 16-bit colour quantises the
+blend and there is no bold to compensate with.
 
 Audio format is **not** hardcoded — it is read from the `X-Sample-Rate` /
 `X-Bits-Per-Sample` / `X-Channels` headers the backend sends. `tts.py`
