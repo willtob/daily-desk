@@ -30,6 +30,38 @@ struct LearnTopic: Decodable, Equatable {
         case name, difficulty
         case topicID = "topic_id"
     }
+
+    /// `topics.yaml` writes names lowercase ("k-means clustering") because
+    /// that's how they read as prose in the grading prompt. The UI wants Title
+    /// Case, so it's capitalized here rather than in the yaml — one transform,
+    /// applied at every display site instead of copied into each.
+    ///
+    /// Not `.capitalized`: that lowercases the whole string first, which
+    /// mangles the real acronyms in this topic list — "RLHF" becomes "Rlhf",
+    /// "The KV cache" becomes "The Kv Cache", "FlashAttention" becomes
+    /// "Flashattention". `titleCased` below leaves any word alone that already
+    /// has an uppercase letter in it, on the assumption that it's already
+    /// correct, and only touches words that are fully lowercase.
+    var displayName: String { name.titleCased }
+}
+
+private extension String {
+    /// Title Case that preserves existing internal capitalization instead of
+    /// discarding it. See `LearnTopic.displayName` for why that distinction
+    /// matters here specifically.
+    var titleCased: String {
+        split(separator: " ", omittingEmptySubsequences: false)
+            .map { word in
+                word.split(separator: "-", omittingEmptySubsequences: false)
+                    .map { part -> String in
+                        guard let first = part.first, !part.contains(where: \.isUppercase)
+                        else { return String(part) }
+                        return first.uppercased() + part.dropFirst()
+                    }
+                    .joined(separator: "-")
+            }
+            .joined(separator: " ")
+    }
 }
 
 struct LearnSession: Decodable, Equatable {

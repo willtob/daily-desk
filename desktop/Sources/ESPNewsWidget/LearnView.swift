@@ -127,7 +127,7 @@ struct LearnView: View {
                 capsule(store.difficultyText)
                     .padding(.bottom, 10)
 
-                Text(topic.name)
+                Text(topic.displayName)
                     .font(.system(size: Theme.titleSize, weight: .semibold))
                     .foregroundStyle(Theme.white)
                     .multilineTextAlignment(.center)
@@ -171,7 +171,7 @@ struct LearnView: View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
 
-            Text(store.topic?.name ?? "")
+            Text(store.topic?.displayName ?? "")
                 .font(.system(size: Theme.metaSize + 1))
                 .foregroundStyle(Theme.dim)
                 .multilineTextAlignment(.center)
@@ -198,7 +198,7 @@ struct LearnView: View {
 
             Spacer(minLength: 0)
 
-            primaryButton("Done — let me explain") { store.finishEarly() }
+            primaryButton("Done") { store.finishEarly() }
         }
     }
 
@@ -206,7 +206,7 @@ struct LearnView: View {
 
     private var explainScreen: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(store.topic?.name ?? "")
+            Text(store.topic?.displayName ?? "")
                 .font(.system(size: Theme.metaSize + 1, weight: .semibold))
                 .foregroundStyle(Theme.accent)
                 .lineLimit(2)
@@ -246,12 +246,23 @@ struct LearnView: View {
                 }
 
                 if store.explanation.isEmpty {
-                    Text("Explain it as if to someone who doesn't know it.")
-                        .font(.system(size: Theme.bodySize))
-                        .foregroundStyle(Theme.dim.opacity(0.7))
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 14)
-                        .allowsHitTesting(false)
+                    // Padding matches the offscreen branch above (13, 11), not
+                    // TextEditor's own explicit (8, 6): TextEditor carries a
+                    // hidden internal inset — an NSTextView default, undocumented
+                    // in SwiftUI — that the explicit padding alone doesn't
+                    // account for. (13, 11) is where that branch was already
+                    // measured to land, for the same reason: matching where
+                    // TextEditor actually puts its first character.
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Explain here")
+                            .foregroundStyle(Theme.dim.opacity(0.7))
+                        Text("The mechanism is… It matters because… The catch is…")
+                            .foregroundStyle(Theme.dim.opacity(0.45))
+                    }
+                    .font(.system(size: Theme.bodySize))
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 11)
+                    .allowsHitTesting(false)
                 }
             }
             .frame(maxHeight: .infinity)
