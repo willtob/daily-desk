@@ -18,6 +18,7 @@ from langgraph.graph import END, START, StateGraph
 
 from esp_news.config import FeedsConfig
 from esp_news.embeddings import EmbeddingClient
+from esp_news.feedback import FeedbackStore
 from esp_news.interests import InterestProfile
 from esp_news.models import DigestState
 from esp_news.nodes.curate import curate_articles
@@ -38,6 +39,7 @@ def build_digest_graph(
     *,
     client: EmbeddingClient | None = None,
     seen: SeenStore | None = None,
+    feedback: FeedbackStore | None = None,
     summarizer: Summarizer | None = None,
     use_llm_summary: bool = True,
     use_cached_feeds: bool = False,
@@ -57,6 +59,10 @@ def build_digest_graph(
     ``use_cached_feeds=True`` serves ingest from the stored feed copies instead
     of the network — for tuning the interest profile, which changes only what
     happens downstream of ingest.
+
+    ``feedback`` is the like/dislike store. Left as None the graph scores from
+    ``interests.yaml`` alone, which is exactly what it did before verdicts
+    existed.
     """
 
     def ingest_node(state: DigestState) -> dict:
@@ -72,7 +78,10 @@ def build_digest_graph(
     def score_node(state: DigestState) -> dict:
         return {
             "scored_articles": score_articles(
-                state.deduped_articles, profile=profile, client=client
+                state.deduped_articles,
+                profile=profile,
+                client=client,
+                feedback=feedback,
             )
         }
 

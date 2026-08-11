@@ -77,7 +77,8 @@ uv run esp-digest               # run the whole graph, print and write digests/<
 uv run esp-digest --dry-run     # print only — writes nothing, marks nothing as seen
 uv run esp-digest --top 15 --per-area-cap 4
 uv run esp-digest --no-seen     # allow articles from earlier digests to reappear
-uv run esp-digest --no-wildcard # drop the low-scoring exploration article
+uv run esp-digest --no-wildcard # drop the mid-ranked exploration article
+uv run esp-digest --no-feedback # score from interests.yaml alone, ignoring verdicts
 ```
 
 `esp-digest` is the v1 entry point: it runs the full LangGraph pipeline
@@ -177,6 +178,12 @@ uv run esp-serve --port 8010      # port 8000 is taken by Docker on this machine
 | `GET /digest.md` | today's markdown (falls back to the most recent) |
 | `GET /health` | freshness, age in hours, refresh status, last error |
 | `POST /refresh` | runs the pipeline in the background, returns `202` immediately |
+| `GET /feedback` | every current like/dislike, for rendering state |
+| `POST /feedback` | record a verdict, or clear one |
+| `DELETE /feedback` | clear a verdict — the same operation as `POST … "clear"` |
+
+The feedback endpoints have their own contract in
+[`docs/feedback-api.md`](docs/feedback-api.md), written for client authors.
 
 The server reads the last written digest instead of running the pipeline per
 request. A full run takes ~20–30 s and the firmware's HTTP client times out at

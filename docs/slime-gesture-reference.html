@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Slime pull gesture — reference implementation</title>
+<style>
+body{font-family:-apple-system,system-ui,sans-serif;background:#F5F4EF;margin:0;padding:60px 20px;color:#151515}
+.wrap{width:320px;margin:0 auto;position:relative}
+.note{width:320px;margin:32px auto 0;font-size:13px;line-height:1.6;color:#666}
+</style>
+</head>
+<body>
+<div class="wrap" id="stage">
+  <svg id="goo" width="320" height="500" viewBox="0 0 320 500"
+       style="position:absolute;left:0;top:-170px;z-index:3;pointer-events:none;overflow:visible">
+    <path id="neck" fill="#151515"></path>
+    <circle id="drop" r="0" fill="#151515" cx="160" cy="170"></circle>
+    <g id="icon" opacity="0"></g>
+  </svg>
+
+  <div id="hdr" style="position:relative;z-index:2;height:44px;background:#151515;border-radius:10px;
+       display:flex;align-items:center;padding:0 14px;cursor:grab;user-select:none;touch-action:none">
+    <span style="width:8px;height:8px;border-radius:50%;background:#EE9B85;margin-right:10px"></span>
+    <span style="color:#EE9B85;font-size:13px;font-weight:500;letter-spacing:.08em">BCN PLAN</span>
+    <span id="mark" style="margin-left:auto;color:#EE9B85;font-size:15px;opacity:0"></span>
+  </div>
+
+  <div style="position:relative;z-index:1;padding:16px 2px 0">
+    <p style="margin:0 0 6px;font-size:15px;font-weight:500">Nou vermut al Poble-sec</p>
+    <p style="margin:0;font-size:13px;color:#666;line-height:1.6">
+      This text must stay still. If it shifts while you pull, the header is being
+      resized instead of having a shape drawn beneath it.
+    </p>
+  </div>
+</div>
+
+<p class="note" id="out">Drag the black bar down to like, up to dislike.</p>
+
+<script>
+(function(){
+
+// ---- tuning constants -------------------------------------------------
+var HEADER_TOP    = 170;   // header edges in SVG coords
+var HEADER_BOTTOM = 214;
+var ROOT_HALFWIDTH= 50;    // half-width of the neck where it meets the bar
+var DROP_RADIUS   = 26;
+var BREAK_DIST    = 105;   // commit threshold
+var MAX_TRAVEL    = 150;   // rubber-band asymptote
+var NECK_TAPER    = 0.82;  // how much the root narrows at full stretch
+var DROP_SHRINK   = 0.22;
+var CTRL_ROOT     = 0.95;  // bezier handle length off the bar, x stretch
+var CTRL_TIP      = 0.85;  // bezier handle length off the droplet
+var SPRING_K      = 0.22;
+var SPRING_DAMP   = 0.72;
+
+var hdr=document.getElementById('hdr'), neck=document.getElementById('neck'),
+    drop=document.getElementById('drop'), icon=document.getElementById('icon'),
+    mark=document.getElementById('mark'), out=document.getElementById('out');
+
+var drag=false, gx=160, sx=0, sy=0, ox=0, oy=0, vx=0, vy=0, verdict=0, popped=false;
+
+function heart(x,y,s){return '<path transform="translate('+x+','+y+') scale('+s+')" fill="#EE9B85" d="M0,4.2 C-5.6,0.2 -5.6,-4.2 -2.2,-4.2 C-0.8,-4.2 0,-3.1 0,-2.2 C0,-3.1 0.8,-4.2 2.2,-4.2 C5.6,-4.2 5.6,0.2 0,4.2 Z"/>';}
+function frown(x,y,s){return '<g transform="translate('+x+','+y+') scale('+s+')" fill="none" stroke="#EE9B85" stroke-width="1.1" stroke-linecap="round"><circle cx="-2" cy="-1.6" r="0.7" fill="#EE9B85" stroke="none"/><circle cx="2" cy="-1.6" r="0.7" fill="#EE9B85" stroke="none"/><path d="M-2.6,2.8 Q0,0.6 2.6,2.8"/></g>';}
+
+// ---- the geometry -----------------------------------------------------
+// A = anchor, fixed at the grab point on the bar edge.
+// B = droplet centre, follows the cursor.
+// The neck is one filled path from the bar edge to a chord across the
+// droplet; the droplet circle is drawn on top in the same fill, so the two
+// read as a single body. n is the unit normal to the A->B axis, sign-
+// corrected so "left of the bar" always maps to "left of the droplet".
+function shape(){
+  var reach=Math.hypot(ox,oy);
+  if(reach<1.5){neck.setAttribute('d','');drop.setAttribute('r',0);icon.setAttribute('opacity',0);return;}
+
+  var down = oy>=0;
+  var ay = down?HEADER_BOTTOM:HEADER_TOP;
+  var ax = gx, bx = gx+ox, by = ay+oy;
+
+  var ux=bx-ax, uy=by-ay, d=Math.hypot(ux,uy)||1;
+  var sgn = uy>=0 ? 1 : -1;
+  var nx=-uy/d*sgn, ny=ux/d*sgn;
+  var p=Math.min(1,d/MAX_TRAVEL);
+
+  var w = ROOT_HALFWIDTH*(1-NECK_TAPER*p);
+  var r = DROP_RADIUS*(1-DROP_SHRINK*p);
+  var k = d*0.5;
+
+  var q1x=bx+nx*r*0.92, q1y=by+ny*r*0.92;
+  var q2x=bx-nx*r*0.92, q2y=by-ny*r*0.92;
+  var e1x=ax-w, e2x=ax+w, ey=ay;
+
+  var c1x=e1x+nx*w*0.25,      c1y=ey+sgn*k*CTRL_ROOT;
+  var c2x=q1x-ux/d*k*CTRL_TIP, c2y=q1y-uy/d*k*CTRL_TIP;
+  var c3x=q2x-ux/d*k*CTRL_TIP, c3y=q2y-uy/d*k*CTRL_TIP;
+  var c4x=e2x-nx*w*0.25,      c4y=ey+sgn*k*CTRL_ROOT;
+
+  neck.setAttribute('d','M '+e1x+' '+ey+
+    ' C '+c1x+' '+c1y+' '+c2x+' '+c2y+' '+q1x+' '+q1y+
+    ' L '+q2x+' '+q2y+
+    ' C '+c3x+' '+c3y+' '+c4x+' '+c4y+' '+e2x+' '+ey+' Z');
+
+  drop.setAttribute('cx',bx); drop.setAttribute('cy',by); drop.setAttribute('r',r);
+
+  if(d>BREAK_DIST*0.55){
+    icon.setAttribute('opacity',Math.min(1,(d-BREAK_DIST*0.55)/28));
+    icon.innerHTML = down?heart(bx,by,1.9):frown(bx,by,1.9);
+  } else icon.setAttribute('opacity',0);
+}
+
+function commit(v){
+  verdict=v; mark.style.opacity=v?1:0;
+  mark.innerHTML = v>0 ? '<svg width="15" height="15" viewBox="-6 -6 12 12">'+heart(0,0,1.15)+'</svg>'
+                : v<0 ? '<svg width="15" height="15" viewBox="-6 -6 12 12">'+frown(0,0,1.35)+'</svg>' : '';
+  out.textContent = v>0?'Liked — pull again to clear':(v<0?'Disliked — pull again to clear':'Cleared');
+}
+
+function loop(){
+  if(!drag){
+    vx+=(0-ox)*SPRING_K; vx*=SPRING_DAMP; ox+=vx;
+    vy+=(0-oy)*SPRING_K; vy*=SPRING_DAMP; oy+=vy;
+    if(Math.hypot(ox,oy)<0.4&&Math.hypot(vx,vy)<0.4){ox=0;oy=0;vx=0;vy=0;}
+  }
+  shape(); requestAnimationFrame(loop);
+}
+
+hdr.addEventListener('pointerdown',function(e){
+  drag=true; popped=false; hdr.style.cursor='grabbing'; hdr.setPointerCapture(e.pointerId);
+  var b=hdr.getBoundingClientRect();
+  gx=e.clientX-b.left; sx=e.clientX; sy=e.clientY;
+  ox=0;oy=0;vx=0;vy=0;
+});
+
+hdr.addEventListener('pointermove',function(e){
+  if(!drag)return;
+  var rx=e.clientX-sx, ry=e.clientY-sy, dist=Math.hypot(rx,ry);
+  if(dist<0.001){ox=0;oy=0;return;}
+  // rubber band: travel approaches MAX_TRAVEL asymptotically
+  var el=MAX_TRAVEL*(1-Math.exp(-dist/MAX_TRAVEL)), f=el/dist;
+  ox=rx*f; oy=ry*f;
+  if(!popped&&Math.hypot(ox,oy)>BREAK_DIST){
+    popped=true;
+    var v = oy>=0?1:-1;
+    commit(v===verdict?0:v);
+  }
+});
+
+function end(){ if(!drag)return; drag=false; hdr.style.cursor='grab'; vx=0; vy=0; }
+hdr.addEventListener('pointerup',end);
+hdr.addEventListener('pointercancel',end);
+
+loop();
+})();
+</script>
+</body>
+</html>

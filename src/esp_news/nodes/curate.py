@@ -51,6 +51,17 @@ DEFAULT_WILDCARD_BAND = (0.40, 0.70)
 DEFAULT_MIN_SUMMARY_CHARS = 1
 
 
+def _written_score(article: Article) -> float:
+    """The score interests.yaml alone gave an article.
+
+    Falls back to ``score`` for articles that predate ``base_score`` or were
+    built by hand, which is the same number whenever there is no feedback.
+    """
+    if article.base_score is not None:
+        return article.base_score
+    return article.score or 0.0
+
+
 def _pick_wildcard(
     ranked: list[Article],
     *,
@@ -64,10 +75,19 @@ def _pick_wildcard(
     percentiles, low first, so ``(0.40, 0.70)`` means "somewhere between the
     40th and the 70th percentile". Returns None when everything left is already
     on the front page, which is what a thin corpus looks like.
+
+    The band is measured on ``base_score`` — the written profile alone — so
+    like/dislike verdicts cannot steer the exploration slot toward more of what
+    they already know about. The one residue worth naming: feedback still
+    changes *which* articles the front page took, so the pool this draws from
+    differs by whatever the page swallowed. The ordering inside the pool is
+    feedback-free; its membership is not, and it cannot be without letting the
+    wildcard duplicate a story already on the page.
     """
     candidates = [a for a in ranked if a.url not in exclude]
     if not candidates:
         return None
+    candidates = sorted(candidates, key=_written_score, reverse=True)
 
     # Percentiles count up from the worst article; ``candidates`` counts down
     # from the best. The 70th percentile is therefore 30% of the way in from the

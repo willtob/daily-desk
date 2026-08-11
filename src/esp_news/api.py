@@ -10,6 +10,12 @@ on-request pipeline would guarantee the device never sees a response.
     GET  /digest.md     today's markdown, if it exists
     GET  /health        freshness and whether a refresh is running
     POST /refresh       kick off a pipeline run, returns immediately
+    GET  /feedback      every current like/dislike, for rendering state
+    POST /feedback      record or clear one verdict
+    DELETE /feedback    clear one verdict
+
+The feedback endpoints are documented for client authors in
+docs/feedback-api.md, which is the contract — keep the two in step.
 
 The 15-minute learning tab mounts its own router under /learn — same app and
 same port, since every client wants one base URL. See esp_news/learn/api.py.
@@ -27,6 +33,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 from openai import APITimeoutError, OpenAIError
+from pydantic import BaseModel
 
 # Load .env at import. Without this only /refresh sees the key (it calls
 # init_tracing itself), and /audio fails with a confusing 503 despite the key
@@ -35,8 +42,19 @@ load_dotenv()
 
 from esp_news.config import load_feeds_config
 from esp_news.embeddings import MissingAPIKeyError
+from esp_news.feedback import (
+    CLEAR,
+    DISLIKE,
+    LIKE,
+    VERDICTS,
+    ArticleIndex,
+    FeedbackStore,
+    index_digest,
+)
 from esp_news.interests import load_interests_profile
 from esp_news.learn.api import router as learn_router
+from esp_news.models import Article
+from esp_news.nodes.dedup import _canonical_url
 from esp_news.nodes.digest import (
     DEFAULT_DIGEST_DIR,
     DEFAULT_JSON_LIMIT,
@@ -110,10 +128,15 @@ def _run_pipeline() -> None:
         profile = load_interests_profile()
         seen = SeenStore()
 
-        state = run_digest_graph(config, profile, seen=seen)
+        state = run_digest_graph(
+            config, profile, seen=seen, feedback=FeedbackStore()
+        )
 
         write_digest(state.digest_markdown or "")
         write_digest_json(digest_payload(state.curated_articles))
+        # Same as the CLI: record what each article was, so a verdict arriving
+        # later can be stored against the text that was embedded.
+        index_digest(state.curated_articles)
 
         for art in state.curated_articles:
             seen.add(art.url)
@@ -257,3 +280,158 @@ def refresh() -> dict:
         return {"status": "already-running"}
     threading.Thread(target=_run_pipeline, name="refresh", daemon=True).start()
     return {"status": "started"}
+
+
+# ── Feedback ─────────────────────────────────────────────────────────────────
+#
+# The client knows a URL and nothing else. Everything a verdict has to record —
+# the title, the matched area, the score, and above all the exact text that was
+# embedded — is resolved here from the server's own records, so a client cannot
+# get it wrong and does not need to be updated when the record grows a field.
+#
+# Resolution order is the article index first (the embedded text, written by
+# every pipeline run) and the served digest second (a reconstruction from what
+# was displayed, for a verdict on a digest older than the index). Only if both
+# miss is this a 404 — a verdict on an article the server has never heard of is
+# the one case where guessing would be worse than failing.
+
+
+class FeedbackRequest(BaseModel):
+    """One verdict. ``clear`` removes whatever verdict the URL currently has."""
+
+    url: str
+    verdict: str
+
+
+def _resolve_article(url: str) -> tuple[dict, str] | None:
+    """What this URL was, and where that came from."""
+    entry = ArticleIndex().get(url)
+    if entry:
+        return entry, "embedded"
+
+    try:
+        served = _load_latest().get("articles", [])
+    except HTTPException:
+        # No digest on disk yet. That is a reason this URL is unknown, not a
+        # separate failure to report — the caller gets the same 404 either way.
+        return None
+
+    key = _canonical_url(url) or url
+    for article in served:
+        if (_canonical_url(article.get("url", "")) or "") == key:
+            # Rebuilt through the model so the truncation matches the scorer's,
+            # even though the summary underneath it does not.
+            stand_in = Article(
+                title=article.get("title", ""),
+                url=article.get("url", url),
+                source=article.get("source", ""),
+                theme="",
+                summary=article.get("summary", ""),
+            )
+            return {
+                "url": article.get("url", url),
+                "title": stand_in.title,
+                "text": stand_in.embedding_text,
+                "matched_area": article.get("matched_area") or None,
+                "score": article.get("score"),
+            }, "display"
+    return None
+
+
+@app.get("/feedback")
+def get_feedback(
+    url: str | None = Query(None, description="Return only this article's verdict."),
+    include_text: bool = Query(
+        False, description="Include the stored embedded text (large)."
+    ),
+) -> JSONResponse:
+    """Every current verdict, or one of them.
+
+    ``?url=`` returns ``{"url": ..., "verdict": null}`` rather than a 404 when
+    nothing is recorded: "no verdict" is a normal state for a card to render,
+    not an error.
+
+    The stored text is omitted unless asked for. It runs to a thousand
+    characters an article and a client rendering thumbs does not need it.
+    """
+    store = FeedbackStore()
+    current = store.verdicts()
+
+    def shape(record) -> dict:
+        data = record.model_dump(mode="json")
+        if not include_text:
+            data.pop("text", None)
+        return data
+
+    if url is not None:
+        record = current.get(_canonical_url(url) or url)
+        return JSONResponse(
+            {"url": url, "verdict": record.verdict if record else None,
+             "record": shape(record) if record else None}
+        )
+
+    records = sorted(current.values(), key=lambda r: r.recorded, reverse=True)
+    return JSONResponse(
+        {
+            "count": len(records),
+            "likes": sum(1 for r in records if r.verdict == LIKE),
+            "dislikes": sum(1 for r in records if r.verdict == DISLIKE),
+            "verdicts": [shape(r) for r in records],
+        }
+    )
+
+
+@app.post("/feedback")
+def post_feedback(body: FeedbackRequest) -> JSONResponse:
+    """Record a verdict, or clear one with ``verdict: "clear"``.
+
+    Idempotent: re-sending the same verdict for the same URL leaves one verdict
+    in force. The log keeps both lines, because changing your mind is data.
+    """
+    if body.verdict not in VERDICTS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"verdict must be one of {list(VERDICTS)}, got {body.verdict!r}",
+        )
+
+    store = FeedbackStore()
+
+    if body.verdict == CLEAR:
+        existed = store.clear(body.url)
+        return JSONResponse(
+            {"url": body.url, "verdict": None, "cleared": existed}
+        )
+
+    resolved = _resolve_article(body.url)
+    if resolved is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Unknown article — not in the index or the current digest.",
+        )
+    entry, text_source = resolved
+
+    record = store.record(
+        body.verdict,
+        url=entry.get("url", body.url),
+        title=entry.get("title", ""),
+        text=entry.get("text", ""),
+        matched_area=entry.get("matched_area"),
+        score=entry.get("score"),
+        text_source=text_source,
+    )
+    logger.info(
+        "Feedback: %s [%s] %s", record.verdict, record.matched_area, record.title[:60]
+    )
+    return JSONResponse({"url": record.url, "verdict": record.verdict,
+                         "record": record.model_dump(mode="json")})
+
+
+@app.delete("/feedback")
+def delete_feedback(url: str = Query(..., description="Article URL to clear.")) -> dict:
+    """Clear a verdict. The same operation as ``POST`` with ``clear``.
+
+    Both spellings exist because both callers are real: the firmware already
+    speaks POST and nothing else, and everything else expects DELETE to be the
+    way you undo a thing.
+    """
+    return {"url": url, "verdict": None, "cleared": FeedbackStore().clear(url)}

@@ -20,6 +20,17 @@ struct DetailView: View {
 
     @ObservedObject var audio: AudioPlayer
 
+    /// Nil in snapshots, which renders the badge exactly as it was before the
+    /// pull existed. See AreaBadge.
+    var feedback: FeedbackStore?
+
+    /// The panel, so the strip beside the badge can move the window.
+    ///
+    /// An open story covers the header, which is the only other place a drag
+    /// moves the panel — without this the widget would be pinned to the desk
+    /// for as long as a story is open. Nil in snapshots.
+    var panel: PanelController?
+
     /// See Scrollable — snapshot mode only.
     var scrollable = true
 
@@ -42,23 +53,48 @@ struct DetailView: View {
                 }
                 .buttonStyle(.plain)
 
-                Spacer(minLength: 4)
+                // The gap between the back button and the badge is the story
+                // view's title bar. Deliberately a region of its own rather
+                // than a gesture on the whole row: the badge is in this row,
+                // and a drag on the row would be the same argument the window
+                // drag has just been taken out of.
+                if let panel {
+                    Color.clear
+                        .frame(maxWidth: .infinity, maxHeight: 22)
+                        .contentShape(Rectangle())
+                        .gesture(panel.dragGesture())
+                        // A Spacer yields to the views around it; a Color does
+                        // not, and this one was taking its width out of the
+                        // badge — on a 252-point panel the label wrapped to two
+                        // lines and made the row taller than the badge it is
+                        // named for. Negative priority hands the strip whatever
+                        // is left after the badge and the score have theirs.
+                        .layoutPriority(-1)
+                } else {
+                    Spacer(minLength: 4)
+                }
 
-                Text(style.label)
-                    .font(.system(size: Theme.metaSize, weight: .bold))
-                    .tracking(Theme.metaTracking)
-                    .foregroundStyle(style.tint)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(Theme.ink))
+                // Same badge and the same pull as the deck. An open story is
+                // where a verdict is most likely to be formed — it is the only
+                // view where the summary has been read — so leaving the gesture
+                // behind on the card would put it in the wrong place.
+                AreaBadge(article: article, feedback: feedback, client: client)
 
                 Text(String(format: "%.2f", article.score))
                     .font(.system(size: 12, weight: .bold, design: .monospaced))
                     .foregroundStyle(Theme.ink)
             }
             .padding(.horizontal, Theme.cardPad)
-            .padding(.top, Theme.pad)
+            // Headroom, not styling. An upward pull anchors on the top edge of
+            // the badge and reaches `SlimePull.headroom` above it; this row sat
+            // twelve points from the top of the panel, which clips a dislike in
+            // half exactly as it commits. The deck has forty-six points of room
+            // above its badge and needs no help — this is the one view where a
+            // badge would otherwise be jammed against the edge of the window.
+            .padding(.top, SlimePull.headroom)
             .padding(.bottom, 8)
+            // As on the card: the blob is drawn over the story, not under it.
+            .zIndex(1)
 
             Scrollable(scrollable) {
                 VStack(alignment: .leading, spacing: 8) {

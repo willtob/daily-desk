@@ -8,6 +8,7 @@ from collections import Counter
 
 from esp_news.config import FeedsConfig, load_feeds_config
 from esp_news.embeddings import DEFAULT_CACHE_PATH, EmbeddingClient, MissingAPIKeyError
+from esp_news.feedback import FeedbackStore, index_digest
 from esp_news.graph import run_digest_graph
 from esp_news.interests import load_interests_profile
 from esp_news.models import Article
@@ -35,6 +36,19 @@ def _base_parser(description: str) -> argparse.ArgumentParser:
         "--hours", type=int, default=None, help="Override the lookback window (hours)."
     )
     return parser
+
+
+def _add_feedback_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--no-feedback",
+        action="store_true",
+        help="Score from interests.yaml alone, ignoring recorded likes and "
+        "dislikes. The before half of a before/after comparison.",
+    )
+
+
+def _feedback_store(args: argparse.Namespace) -> FeedbackStore | None:
+    return None if getattr(args, "no_feedback", False) else FeedbackStore()
 
 
 def _load_and_ingest(args: argparse.Namespace) -> tuple[list[Article], FeedsConfig]:
@@ -133,6 +147,7 @@ def score_main() -> None:
         action="store_true",
         help="Bypass the embedding cache and re-embed everything.",
     )
+    _add_feedback_arg(parser)
     args = parser.parse_args()
 
     _configure_logging()
@@ -147,7 +162,9 @@ def score_main() -> None:
         cache_path=None if args.no_cache else DEFAULT_CACHE_PATH,
     )
     try:
-        scored = score_articles(articles, profile=profile, client=client)
+        scored = score_articles(
+            articles, profile=profile, client=client, feedback=_feedback_store(args)
+        )
     except MissingAPIKeyError as exc:
         raise SystemExit(f"\n{exc}")
 
@@ -200,7 +217,7 @@ def _add_curate_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--no-wildcard",
         action="store_true",
-        help="Drop the low-scoring exploration article from the end of the page.",
+        help="Drop the mid-ranked exploration article from the end of the page.",
     )
 
 
@@ -218,6 +235,7 @@ def curate_main() -> None:
     _add_curate_args(parser)
     parser.add_argument("--interests", default=None, help="Path to interests.yaml.")
     parser.add_argument("--no-cache", action="store_true", help="Bypass embed cache.")
+    _add_feedback_arg(parser)
     args = parser.parse_args()
 
     _configure_logging()
@@ -229,7 +247,10 @@ def curate_main() -> None:
 
     try:
         scored = score_articles(
-            deduped, profile=profile, client=_build_client(profile, args.no_cache)
+            deduped,
+            profile=profile,
+            client=_build_client(profile, args.no_cache),
+            feedback=_feedback_store(args),
         )
     except MissingAPIKeyError as exc:
         raise SystemExit(f"\n{exc}")
@@ -288,6 +309,7 @@ def summarize_main() -> None:
     _add_summary_args(parser)
     parser.add_argument("--interests", default=None, help="Path to interests.yaml.")
     parser.add_argument("--no-cache", action="store_true", help="Bypass embed cache.")
+    _add_feedback_arg(parser)
     args = parser.parse_args()
 
     _configure_logging()
@@ -299,7 +321,10 @@ def summarize_main() -> None:
 
     try:
         scored = score_articles(
-            deduped, profile=profile, client=_build_client(profile, args.no_cache)
+            deduped,
+            profile=profile,
+            client=_build_client(profile, args.no_cache),
+            feedback=_feedback_store(args),
         )
         curated = curate_articles(
             scored,
@@ -365,6 +390,7 @@ def digest_main() -> None:
         action="store_true",
         help="Print the digest without writing it or recording articles as seen.",
     )
+    _add_feedback_arg(parser)
     args = parser.parse_args()
 
     _configure_logging()
@@ -382,6 +408,7 @@ def digest_main() -> None:
             profile,
             client=_build_client(profile, args.no_cache),
             seen=seen,
+            feedback=_feedback_store(args),
             summarizer=Summarizer(
                 model=args.summary_model, target_chars=args.target_chars
             ),
@@ -409,6 +436,12 @@ def digest_main() -> None:
     )
     print(f"\nWritten to {path}")
     print(f"          {json_path}  (served by esp-serve)")
+
+    # Remember what each article *was*, so a like or dislike arriving later can
+    # be recorded against the text that was actually embedded. Nothing the
+    # client is shown carries that: digest.json holds the LLM summary, the
+    # scorer used the title plus the raw RSS blurb.
+    index_digest(state.curated_articles)
 
     # Only record what actually made the digest, and only after it's on disk —
     # a crash mid-run must not silently suppress articles from the next one.

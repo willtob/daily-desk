@@ -92,3 +92,49 @@ def test_wildcard_returns_none_when_everything_is_already_on_the_page():
 def test_wildcard_band_default_is_mid_pack():
     low, high = DEFAULT_WILDCARD_BAND
     assert 0.0 < low < high < 1.0
+
+
+def test_feedback_cannot_steer_the_wildcard():
+    """The exploration slot is drawn from the written profile's ranking.
+
+    The wildcard exists because the profile can only ever hand back more of what
+    it already knows about. Letting like/dislike verdicts reorder the pool it is
+    drawn from would point the one unsteered slot at the same place everything
+    else already points.
+
+    So the band is measured on ``base_score``. Here the same articles are given
+    a wildly different ``score`` — reversed, so no ranking survives — and the
+    same seed has to draw the same article.
+    """
+    ranked = ranked_articles(100)
+    with_base = [
+        a.model_copy(update={"base_score": a.score}) for a in ranked
+    ]
+    # Same articles, same base_score, feedback-mangled `score` running backwards.
+    n = len(with_base)
+    shuffled = sorted(
+        (
+            a.model_copy(update={"score": (i + 1) / n})
+            for i, a in enumerate(with_base)
+        ),
+        key=lambda a: a.score,
+        reverse=True,
+    )
+
+    for seed in range(50):
+        plain = _pick_wildcard(with_base, exclude=set(), rng=random.Random(seed))
+        moved = _pick_wildcard(shuffled, exclude=set(), rng=random.Random(seed))
+        assert plain.title == moved.title
+
+
+def test_the_band_falls_back_to_score_when_there_is_no_base_score():
+    """Articles built before base_score existed still land in the same band."""
+    ranked = ranked_articles(100)
+    assert all(a.base_score is None for a in ranked)
+
+    picks = {
+        _pick_wildcard(ranked, exclude=set(), rng=random.Random(s)).title
+        for s in range(200)
+    }
+    positions = sorted(int(t.split("-")[1]) for t in picks)
+    assert positions[0] == 30 and positions[-1] == 59
