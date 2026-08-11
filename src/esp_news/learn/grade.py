@@ -63,7 +63,14 @@ _MAX_EXPLANATION_CHARS = 24000
 # 1: First rubric. Ten-point bands anchored on what the explanation contains,
 #    missed_concepts constrained to the topic's `covers` hint, three calibration
 #    examples on k-means (weak/middling/strong).
-PROMPT_VERSION = "1"
+# 2: The three v1 examples all correlated length with score (55/95/180 words for
+#    3/6/10) even though the rubric said length doesn't matter — few-shot examples
+#    teach by pattern, so that correlation was liable to be learned regardless of
+#    what the instructions said. Added a sentence to the rubric stating brevity is
+#    not a defect, and a fourth calibration example: ~46 words, full checklist,
+#    scored 9 — the same score band as a much longer explanation, one below the
+#    verbose 10 because it states the checklist rather than reasoning beyond it.
+PROMPT_VERSION = "2"
 
 
 class Grade(BaseModel):
@@ -110,6 +117,10 @@ insight beyond the checklist — a connection, a consequence, a good analogy.
 Confident fluency is not knowledge. An explanation that sounds authoritative while \
 omitting the mechanism scores in the 3-4 band, not the 6-7 band. Conversely, halting \
 or badly organised prose that contains the right substance scores on the substance.
+
+Brevity is not a defect. Someone who states the mechanism correctly in two sentences \
+deserves the same score as someone who takes ten. Bullet points, fragments, and \
+spoken-style asides are all acceptable — you are reading for content, not composition.
 
 MISSED_CONCEPTS. Draw these from the checklist. Each entry names one specific thing \
 that was absent or wrong, in a few words, phrased so they know what to go and learn \
@@ -229,6 +240,36 @@ understanding it. Nothing here needs fixing.",
     "gave a concrete failure case in the crossing elongated bands"
   ]
 }
+
+--- EXAMPLE 4 ---
+EXPLANATION: "k-means: pick k, assign each point to nearest centroid, move centroids to \
+the mean of their points, repeat until stable. k is fixed upfront — no principled way to \
+choose it. Converges to a local optimum, so results depend on init (why k-means++ \
+exists). Assumes round, similar-sized clusters."
+GRADE:
+{
+  "score": 9,
+  "feedback": "Every item on the checklist is here, correctly stated, in under fifty \
+words — the loop, the mean update, the stopping condition, the upfront-k limitation, \
+initialisation sensitivity with k-means++ named as the fix, and the round-cluster \
+assumption. What would take this to a 10 is explaining why k-means++ helps rather than \
+just naming it, or deriving the cluster-shape assumption from the nearest-centroid rule \
+instead of stating it. Nothing here is wrong or missing — it's facts rather than \
+reasoning.",
+  "missed_concepts": [],
+  "strengths": [
+    "covered the full checklist — loop, mean update, stopping condition, k chosen \
+upfront, initialisation sensitivity, k-means++, and the round-cluster assumption — in \
+under fifty words",
+    "named k-means++ specifically rather than leaving the initialisation problem unfixed",
+    "stated the round, similarly-sized cluster assumption explicitly rather than dropping \
+it for brevity"
+  ]
+}
+
+Note on Example 4: this is not a weaker version of Example 3. It scores one point \
+below it for the same reason Example 3 scores above Example 2 — reasoning beyond the \
+checklist, not length. A correct, complete explanation is not penalised for being short.
 """
 
 _INSTRUCTIONS = f"{_RUBRIC}\n\n{_CALIBRATION}"

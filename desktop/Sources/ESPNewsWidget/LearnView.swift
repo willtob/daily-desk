@@ -246,12 +246,16 @@ struct LearnView: View {
                 }
 
                 if store.explanation.isEmpty {
-                    Text("Explain it as if to someone who doesn't know it.")
-                        .font(.system(size: Theme.bodySize))
-                        .foregroundStyle(Theme.dim.opacity(0.7))
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 14)
-                        .allowsHitTesting(false)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Explain here.")
+                            .foregroundStyle(Theme.dim.opacity(0.7))
+                        Text("The mechanism is… It matters because… The catch is…")
+                            .foregroundStyle(Theme.dim.opacity(0.45))
+                    }
+                    .font(.system(size: Theme.bodySize))
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 14)
+                    .allowsHitTesting(false)
                 }
             }
             .frame(maxHeight: .infinity)
