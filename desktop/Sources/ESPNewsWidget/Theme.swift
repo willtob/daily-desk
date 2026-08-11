@@ -81,6 +81,15 @@ enum Theme {
     static let titleSize:   CGFloat = 16
     static let displaySize: CGFloat = 19
 
+    /// The countdown, and the grade. Far outside the scale above because they
+    /// are the only two numbers in this app meant to be read from across a
+    /// desk rather than looked at — the same reason the reference timer sets
+    /// its digits at roughly this size against 9 pt labels. Rounded and
+    /// monospaced-digit at the call site so the clock does not wobble as the
+    /// glyphs change width.
+    static let timerSize:   CGFloat = 44
+    static let scoreSize:   CGFloat = 30
+
     static let metaTracking: CGFloat = 0.9
     static let titleLeading: CGFloat = 1.5
     static let bodyLeading:  CGFloat = 5   // firmware runs 6 at 14 px; scaled
@@ -99,6 +108,11 @@ enum Theme {
     /// Calendar and Weather widgets sit at roughly this radius.
     static let cardRadius:  CGFloat = 18
     static let shellRadius: CGFloat = 20
+
+    /// The learning timer traces the shell's own edge rather than drawing a
+    /// ring inside it. 3 pt reads clearly at a glance without turning the
+    /// widget into a bordered window — the hairline underneath it is 1 pt.
+    static let timerLine:   CGFloat = 3
 
     // MARK: - Score band
     //

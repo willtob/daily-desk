@@ -78,6 +78,7 @@ defaults write com.willtobin.esp-news-widget baseURL http://127.0.0.1:8010
 | `⌘D` | desktop ⇄ floating |
 | `⌘Q` | quit |
 | Two-finger swipe ⇠⇢ | next / previous story, on the deck or with one open |
+| `⌘1` / `⌘2`, or the header wordmark | NEWS ⇄ LEARN |
 | Drag anywhere | move the widget |
 
 A two-finger swipe is not a gesture in AppKit's sense — it is a stream of
@@ -330,6 +331,66 @@ front-to-back #65  Finder     layer=-2147483603   1470x956
 
 Same layer, or listed after Finder, means the widget is buried.
 
+## The learning tab
+
+The panel's second tab, against the backend's `/learn` endpoints: it draws a
+random ML/AI topic from `topics.yaml`, runs a fifteen-minute timer, takes a
+typed explanation, and has an LLM grade it against a per-topic checklist the
+client never sees. Streaks live in `learn.db` on the backend side.
+
+```
+TOPIC ──Start──▶ TIMER ──Done / expiry──▶ EXPLAIN ──Submit──▶ GRADING ──▶ RESULT
+  ▲                │                         ▲                    │          │
+  └────Cancel──────┘                         └────on error────────┘          │
+  └───────────────────────────Next topic ◀───────────────────────────────────┘
+```
+
+**The timer is the widget's own border**, not a ring inside it — an accent line
+around the shell that empties from the top as the fifteen minutes run down,
+which is what iOS does on the Dynamic Island. It costs no vertical space, which
+on a 300 pt panel is the difference between the countdown being headline-sized
+and timer-sized.
+
+Three things in here are load-bearing and easy to undo:
+
+- **The countdown is a deadline, not a counter.** `LearnStore` keeps an
+  absolute `Date` and derives `remaining` from it. Decrementing a stored number
+  instead loses time whenever the app is busy or the display sleeps, silently,
+  so a fifteen-minute timer runs eighteen and the only symptom is that the
+  session felt long.
+- **The explanation survives everything except an explicit new session** — a
+  grading failure returns to the editor with the text still in it. It is
+  fifteen minutes of work and the one thing here the backend cannot re-issue.
+- **`RootView`'s key handlers are scoped to the news tab.** Unscoped, the space
+  bar flips a card instead of typing a space and the arrow keys page the deck
+  instead of moving the caret, while you are mid-sentence in the editor.
+  Returning `.ignored` is what lets the key reach the text view.
+
+`TimerBorder`'s `0.75` offset is the one piece of undocumented geometry.
+SwiftUI's `RoundedRectangle` path starts at the *middle of the right edge* and
+runs clockwise — measured off the snapshots, not assumed — so trimming from
+zero parks the gap on the right-hand edge. Top-centre works out to exactly
+three quarters of the way round for any width, height and corner radius, since
+`P = 2[(w-2r) + (h-2r) + πr]` and the distance from mid-right to top-centre is
+`1.5[(w-2r) + (h-2r) + πr]`. The `timer-sweep-*.png` snapshots exist to catch a
+regression in it, because the failure is a quiet cosmetic wrong rather than a
+crash.
+
+### Checking it against a live backend
+
+```bash
+swift run ESPNewsWidget --learn-check http://127.0.0.1:8010
+```
+
+Walks every `/learn` endpoint in order and prints ok/FAIL per step, including
+that a second grade on the same session is refused with a 409. Snapshots prove
+the layout and cannot prove the wire types: a renamed JSON field decodes to an
+empty list on a screen that still looks perfect, and it would surface at the
+one moment in this app that costs fifteen minutes of typing to reach.
+
+**It writes a real graded session** into `learn.db` and so moves the streak and
+the average. Point it at a scratch backend, not the one keeping your streak.
+
 ## Snapshots
 
 Same motivation as `firmware/sim/`: looking at the UI should cost seconds.
@@ -345,10 +406,17 @@ is judged against something like what it will sit on. Three deck positions
 rather than one, because the tints and the peek stack change under you as it
 advances and a single frame proves nothing about either.
 
+Plus `learn-*.png` for the six learning screens and `timer-sweep-*.png` for the
+border trace at four points in a run. Those screens are only reachable by
+living through a fifteen-minute session, which is exactly what makes stills of
+them worth having; `LearnStore.posed` puts a store straight into a phase.
+
 These render the real views, not copies — `DetailView` takes a `scrollable`
 flag that swaps the `ScrollView` for a plain top-aligned stack, because
 `ImageRenderer` does not lay out scroll content and would otherwise hand back
-an empty rectangle.
+an empty rectangle. `LearnView` takes the same flag for the same reason twice
+over: `ImageRenderer` draws a `TextEditor` and a `ProgressView` as a yellow
+"not allowed" badge that fills the panel and hides the whole layout behind it.
 
 **What a snapshot cannot show is the flip**, which is most of the design. For
 that, run it.

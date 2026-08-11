@@ -11,12 +11,26 @@
 import AppKit
 import SwiftUI
 
+/// The two things the panel can be showing. There is no tab *bar*: on a 300 pt
+/// panel a band of chrome for a control used twice a day is a poor trade, and
+/// the header is already sitting there with a wordmark in it. So the wordmark
+/// became the switcher.
+enum Tab: String, CaseIterable {
+    case news
+    case learn
+
+    var title: String { rawValue.uppercased() }
+}
+
 struct RootView: View {
 
     @ObservedObject var store: DigestStore
+    @ObservedObject var learn: LearnStore
     @ObservedObject var controller: PanelController
     @StateObject private var audio = AudioPlayer()
     @StateObject private var pager = TrackpadPager()
+
+    @State private var tab: Tab = .news
 
     /// Monotonic deck position — see DeckView. Not an index into `articles`.
     @State private var position = 0
@@ -49,11 +63,15 @@ struct RootView: View {
 
                 VStack(spacing: 0) {
                     header
-                    deck
-                    nav
+                    if tab == .news {
+                        deck
+                        nav
+                    } else {
+                        LearnView(store: learn)
+                    }
                 }
 
-                if let openIndex, openIndex < store.articles.count {
+                if tab == .news, let openIndex, openIndex < store.articles.count {
                     story(at: openIndex, panel: geo.size)
                 }
             }
@@ -72,6 +90,16 @@ struct RootView: View {
             RoundedRectangle(cornerRadius: Theme.shellRadius, style: .continuous)
                 .stroke(Color.white.opacity(0.07), lineWidth: 1)
         )
+        // The fifteen-minute countdown, as the panel's own edge. Over the
+        // hairline rather than instead of it, so the unlit part of the run
+        // still reads as an edge. Only while a session is actually running —
+        // a full accent border sitting there permanently would turn the widget
+        // into a bordered window.
+        .overlay {
+            if tab == .learn, learn.phase == .timer {
+                TimerBorder(elapsed: learn.elapsedFraction)
+            }
+        }
         // Drag from anywhere, the way it did when AppKit was moving the
         // window — but as a gesture, so clicks still reach the deck.
         //
@@ -93,14 +121,54 @@ struct RootView: View {
             pager.start()
         }
         .onDisappear { pager.stop() }
+        // Every one of these is scoped to the news tab, and that is not
+        // tidiness. The learning tab has a TextEditor in it: unscoped, the
+        // space bar would flip a card instead of typing a space, and the arrow
+        // keys would page the deck instead of moving the caret — while the
+        // reader is mid-sentence, with the deck hidden behind the editor.
+        // Returning .ignored is what lets the event reach the text view.
         .onKeyPress(.escape) {
-            guard openIndex != nil else { return .ignored }
+            guard tab == .news, openIndex != nil else { return .ignored }
             close()
             return .handled
         }
-        .onKeyPress(.leftArrow)  { step(-1); return .handled }
-        .onKeyPress(.rightArrow) { step(1);  return .handled }
-        .onKeyPress(.space)      { open();   return .handled }
+        .onKeyPress(.leftArrow)  { newsOnly { step(-1) } }
+        .onKeyPress(.rightArrow) { newsOnly { step(1)  } }
+        .onKeyPress(.space)      { newsOnly { open()   } }
+        // Tab switching. Done through onKeyPress rather than .keyboardShortcut
+        // because that is the mechanism already proven to reach this panel —
+        // the shortcut system routes through the main menu, which a borderless
+        // NSPanel does not reliably own.
+        .onKeyPress(KeyEquivalent("1"), phases: .down) { press in
+            guard press.modifiers.contains(.command) else { return .ignored }
+            select(.news)
+            return .handled
+        }
+        .onKeyPress(KeyEquivalent("2"), phases: .down) { press in
+            guard press.modifiers.contains(.command) else { return .ignored }
+            select(.learn)
+            return .handled
+        }
+    }
+
+    /// Run `action` only on the news tab; otherwise let the key through.
+    private func newsOnly(_ action: () -> Void) -> KeyPress.Result {
+        guard tab == .news else { return .ignored }
+        action()
+        return .handled
+    }
+
+    private func select(_ next: Tab) {
+        guard next != tab else { return }
+        // Leaving news puts the story away and stops its narration — coming
+        // back to a half-open story over a tab you were not on is the kind of
+        // stale state that reads as a bug.
+        if next == .learn {
+            audio.stop()
+            expanded = false
+            openIndex = nil
+        }
+        tab = next
     }
 
     private var dimmed: Bool {
@@ -157,24 +225,56 @@ struct RootView: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            Text("NEWS")
-                .font(.system(size: Theme.metaSize + 1, weight: .black))
-                .tracking(2)
-                .foregroundStyle(Theme.accent)
+            tabSwitcher
 
             Spacer(minLength: 4)
 
-            Text(store.rebuilding ? store.statusText : (store.ageText ?? store.statusText))
-                .font(.system(size: Theme.metaSize))
-                .foregroundStyle(store.fetchFailed ? Theme.accent : Theme.dim)
-                .lineLimit(1)
+            if tab == .news {
+                Text(store.rebuilding ? store.statusText : (store.ageText ?? store.statusText))
+                    .font(.system(size: Theme.metaSize))
+                    .foregroundStyle(store.fetchFailed ? Theme.accent : Theme.dim)
+                    .lineLimit(1)
 
-            refreshButton
+                refreshButton
+            } else {
+                // The streak is the learning tab's equivalent of freshness:
+                // the one number worth seeing without opening anything.
+                if let streak = learn.stats?.currentStreak, streak > 0 {
+                    Text("\(streak) day\(streak == 1 ? "" : "s")")
+                        .font(.system(size: Theme.metaSize))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
+                }
+            }
         }
         .padding(.horizontal, Theme.pad)
         .frame(height: Theme.headerH)
         .contentShape(Rectangle())
         .contextMenu { headerMenu }
+    }
+
+    /// The wordmark, doing double duty. Active in accent, inactive in dim —
+    /// the same one-accent rule the rest of the panel follows, so the switcher
+    /// never competes with the content under it.
+    private var tabSwitcher: some View {
+        HStack(spacing: 5) {
+            ForEach(Tab.allCases, id: \.self) { item in
+                Button { select(item) } label: {
+                    Text(item.title)
+                        .font(.system(size: Theme.metaSize + 1, weight: .black))
+                        .tracking(2)
+                        .foregroundStyle(item == tab ? Theme.accent : Theme.dim.opacity(0.55))
+                }
+                .buttonStyle(.plain)
+                .help(item == .news ? "The digest (⌘1)" : "15-minute learning (⌘2)")
+
+                if item != Tab.allCases.last {
+                    Text("·")
+                        .font(.system(size: Theme.metaSize + 1, weight: .black))
+                        .foregroundStyle(Theme.dim.opacity(0.35))
+                }
+            }
+        }
     }
 
     private var refreshButton: some View {

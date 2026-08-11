@@ -70,7 +70,114 @@ enum Snapshot {
         }
         _ = first
 
+        ok = learnScreens(into: dir) && ok
+
         return ok
+    }
+
+    // MARK: - The learning tab
+    //
+    // Each screen is only reachable by living through a fifteen-minute
+    // session, which is precisely why stills of them are worth having. The
+    // store is posed rather than driven — see LearnStore.posed.
+
+    private static func learnScreens(into dir: URL) -> Bool {
+        let topic = LearnTopic(topicID: "kv_cache",
+                               name: "The KV cache",
+                               difficulty: "advanced")
+
+        let grade = Grade(
+            score: 6,
+            feedback: "The mechanism is right and the memory cost is missing, which is "
+                    + "the half that decides whether you would reach for it. Start with "
+                    + "what the cache actually holds per token, per layer.",
+            missedConcepts: [
+                "that cache memory grows linearly with context and batch size",
+                "why it is what limits concurrent requests on a GPU",
+            ],
+            strengths: [
+                "correctly said decoding reuses past keys and values",
+                "named the quadratic cost of recomputing the prefix",
+            ],
+            counted: false,
+            passScore: 7
+        )
+
+        let stats = LearnStats(
+            currentStreak: 4, longestStreak: 9, sessionsCompleted: 23,
+            rollingAverage: 7.4, averageAllTime: 6.8, rollingWindow: 10,
+            passScore: 7, lastSessionAt: nil
+        )
+
+        let explanation = "The KV cache stores the key and value vectors for every token "
+                        + "already in the context, so generating the next token only "
+                        + "computes attention for that one new position instead of "
+                        + "redoing the whole prefix."
+
+        // remaining is set to something mid-run so the border trace is
+        // partially spent — a full or empty one proves nothing about it.
+        let screens: [(String, LearnStore)] = [
+            // The border trace at four points in a run. Kept as real output
+            // rather than deleted after the fact: where a RoundedRectangle's
+            // path starts is undocumented, TimerBorder's 0.75 offset depends
+            // on it, and a regression there is a quiet cosmetic wrong rather
+            // than a crash. These four frames are how it was pinned down and
+            // are the cheapest way to see it break.
+            ("timer-sweep-90", .posed(phase: .timer, topic: topic, remaining: 0.90 * 900)),
+            ("timer-sweep-60", .posed(phase: .timer, topic: topic, remaining: 0.60 * 900)),
+            ("timer-sweep-30", .posed(phase: .timer, topic: topic, remaining: 0.30 * 900)),
+            ("timer-sweep-05", .posed(phase: .timer, topic: topic, remaining: 0.05 * 900)),
+            ("learn-topic",   .posed(phase: .topic, topic: topic)),
+            ("learn-timer",   .posed(phase: .timer, topic: topic, remaining: 9 * 60 + 12)),
+            ("learn-paused",  .posed(phase: .timer, topic: topic, remaining: 4 * 60 + 5,
+                                     paused: true)),
+            ("learn-explain", .posed(phase: .explaining, topic: topic,
+                                     explanation: explanation)),
+            ("learn-grading", .posed(phase: .grading, topic: topic)),
+            ("learn-result",  .posed(phase: .result, topic: topic, grade: grade)),
+            ("learn-stats",   .posed(phase: .stats, topic: topic, stats: stats)),
+        ]
+
+        var ok = true
+        for (name, store) in screens {
+            ok = write(learnShell(store), to: dir.appendingPathComponent("\(name).png")) && ok
+        }
+        return ok
+    }
+
+    /// RootView's chrome for the learning tab: the switcher, the view, and the
+    /// border trace when a session is running. Duplicated from RootView for the
+    /// same reason `shell` is — RootView owns a polling store and a panel.
+    private static func learnShell(_ store: LearnStore) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 5) {
+                tabs(active: .learn)
+                Spacer()
+                if let streak = store.stats?.currentStreak, streak > 0 {
+                    Text("\(streak) days")
+                        .font(.system(size: Theme.metaSize))
+                        .foregroundStyle(Theme.dim)
+                }
+            }
+            .padding(.horizontal, Theme.pad)
+            .frame(height: Theme.headerH)
+
+            LearnView(store: store, scrolls: false)
+        }
+        .frame(width: size.width, height: size.height, alignment: .top)
+        .background(Theme.bg)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.shellRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.shellRadius, style: .continuous)
+                .stroke(Color.white.opacity(0.07), lineWidth: 1)
+        )
+        .overlay {
+            if store.phase == .timer {
+                TimerBorder(elapsed: store.elapsedFraction)
+            }
+        }
+        .padding(16)
+        .background(Color(hex: 0xE48142))
     }
 
     /// The widget's own chrome around a deck: header, then content, then the
@@ -85,10 +192,7 @@ enum Snapshot {
         shellRaw {
             VStack(spacing: 0) {
                 HStack(spacing: 6) {
-                    Text("NEWS")
-                        .font(.system(size: Theme.metaSize + 1, weight: .black))
-                        .tracking(2)
-                        .foregroundStyle(Theme.accent)
+                    tabs(active: .news)
                     Spacer()
                     Text("2h ago")
                         .font(.system(size: Theme.metaSize))
@@ -113,6 +217,24 @@ enum Snapshot {
                 }
                 .padding(.horizontal, Theme.pad)
                 .frame(height: Theme.navH)
+            }
+        }
+    }
+
+    /// RootView's header switcher. Both shells draw it so a snapshot cannot
+    /// quietly show chrome the app no longer has.
+    private static func tabs(active: Tab) -> some View {
+        HStack(spacing: 5) {
+            ForEach(Tab.allCases, id: \.self) { item in
+                Text(item.title)
+                    .font(.system(size: Theme.metaSize + 1, weight: .black))
+                    .tracking(2)
+                    .foregroundStyle(item == active ? Theme.accent : Theme.dim.opacity(0.55))
+                if item != Tab.allCases.last {
+                    Text("·")
+                        .font(.system(size: Theme.metaSize + 1, weight: .black))
+                        .foregroundStyle(Theme.dim.opacity(0.35))
+                }
             }
         }
     }

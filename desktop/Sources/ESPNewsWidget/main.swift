@@ -94,6 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var panel: NewsPanel!
     private var statusItem: NSStatusItem?
     private let store = DigestStore(baseURL: resolveBaseURL())
+    private let learn = LearnStore(baseURL: resolveBaseURL())
     private let controller = PanelController()
 
     // One card plus its stack, and nothing else. The list this replaced
@@ -167,7 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controller.apply()
 
         panel.contentView = ClickThroughHostingView(
-            rootView: RootView(store: store, controller: controller)
+            rootView: RootView(store: store, learn: learn, controller: controller)
         )
         // Hover highlighting needs these even when the app is not active.
         panel.acceptsMouseMovedEvents = true
@@ -340,6 +341,22 @@ MainActor.assumeIsolated {
                               offline: args.contains("--offline"),
                               baseURL: resolveBaseURL())
         exit(ok ? 0 : 1)
+    }
+
+    // --learn-check drives a whole session against a running backend and
+    // prints each step, then exits.
+    //
+    // Snapshots prove the layout and cannot prove the wire types: a renamed
+    // JSON field decodes to nothing and shows up as an empty screen at the one
+    // moment it costs fifteen minutes of typing. This walks every /learn
+    // endpoint against the real thing, so that failure surfaces here instead.
+    // It does spend one real grading call.
+    //
+    //     swift run ESPNewsWidget --learn-check [http://127.0.0.1:8010]
+    if let i = args.firstIndex(of: "--learn-check") {
+        let raw = (i + 1 < args.count && !args[i + 1].hasPrefix("--")) ? args[i + 1] : nil
+        let base = raw.flatMap(URL.init(string:)) ?? resolveBaseURL()
+        LearnCheck.run(baseURL: base)   // never returns
     }
 
     // --login-item [on|off|status] reads or sets the Open at Login state and
