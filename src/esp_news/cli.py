@@ -438,7 +438,8 @@ def serve_main() -> None:
     import uvicorn
 
     print(f"\n  Point the firmware's NEWS_URL at:  http://<this-mac-lan-ip>:{args.port}/digest.json")
-    print(f"  Endpoints: /digest.json  /digest.md  /health  POST /refresh\n")
+    print(f"  Endpoints: /digest.json  /digest.md  /health  POST /refresh")
+    print(f"  Learning:  /learn/topic  /learn/stats  POST /learn/session/start  /learn/grade\n")
     uvicorn.run("esp_news.api:app", host=args.host, port=args.port, reload=args.reload)
 
 

@@ -10,6 +10,9 @@ on-request pipeline would guarantee the device never sees a response.
     GET  /digest.md     today's markdown, if it exists
     GET  /health        freshness and whether a refresh is running
     POST /refresh       kick off a pipeline run, returns immediately
+
+The 15-minute learning tab mounts its own router under /learn — same app and
+same port, since every client wants one base URL. See esp_news/learn/api.py.
 """
 
 from __future__ import annotations
@@ -33,6 +36,7 @@ load_dotenv()
 from esp_news.config import load_feeds_config
 from esp_news.embeddings import MissingAPIKeyError
 from esp_news.interests import load_interests_profile
+from esp_news.learn.api import router as learn_router
 from esp_news.nodes.digest import (
     DEFAULT_DIGEST_DIR,
     DEFAULT_JSON_LIMIT,
@@ -62,6 +66,8 @@ app = FastAPI(
     description="Serves the curated news digest to the ESP32 display.",
     version="0.1.0",
 )
+
+app.include_router(learn_router)
 
 # One refresh at a time. A second request while one is running is told so
 # rather than queued — the pipeline is not cheap and the caller can retry.

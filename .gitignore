@@ -16,6 +16,13 @@ digests/*.json
 # Cached TTS audio (Phase 8) — regenerates on demand, ~700 KB per article
 digests/audio/
 
+# The 15-minute learning store. Binary, so it diffs uselessly and merges not at
+# all — but unlike the caches it does NOT regenerate, so it is the one ignored
+# file here that would hurt to lose. Back it up if the streak starts mattering.
+learn.db
+learn.db-wal
+learn.db-shm
+
 # macOS
 .DS_Store
 
