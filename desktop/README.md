@@ -5,8 +5,8 @@ same backend, same scores — one story at a time, flip through with a button,
 open the one you want for the full summary and narration.
 
 This is a **front end, not a second pipeline.** It talks to the FastAPI app in
-`src/esp_news/api.py` over the exact contract the firmware uses and knows
-nothing about RSS, scoring or LangGraph. Everything in
+`src/esp_news/api.py` over HTTP and knows nothing about RSS, scoring or
+LangGraph. Everything in
 [the main README](../README.md) about when the feeds actually update applies
 here unchanged.
 
@@ -113,15 +113,16 @@ The card does not slide aside and the story does not arrive from an edge: the
 story *is* the card, opened out. It starts at the tapped card's exact rect, in
 its tint and at its corner radius, and grows to fill the panel; closing shrinks
 it back into the card it came from. The same transition as the ESP32 panel,
-which is where it was worked out — see `firmware/WORKING-NOTES.md`.
+which is where it was worked out — see `WORKING-NOTES.md` at the
+`firmware-final` tag.
 
 Two nested frames do it, and the order is load-bearing. The inner one lays the
 story out at the **panel's** size, so the text is wrapped for where it is
 going; the outer one is the window that grows, anchored top-left, with the rest
 clipped away. Laying the story out at each intermediate size instead would
 re-wrap every line on every frame and the headline would visibly reflow the
-whole way open. On the firmware this falls out of LVGL clipping children to
-their parent's rectangle; in SwiftUI it has to be asked for.
+whole way open. On the panel this fell out of LVGL clipping children to their
+parent's rectangle; in SwiftUI it has to be asked for.
 
 ### Being a widget rather than an app
 
@@ -393,7 +394,8 @@ the average. Point it at a scratch backend, not the one keeping your streak.
 
 ## Snapshots
 
-Same motivation as `firmware/sim/`: looking at the UI should cost seconds.
+Same motivation as the old firmware simulator: looking at the UI should cost
+seconds.
 
 ```bash
 swift run ESPNewsWidget --snapshot /tmp/snap             # against live data
@@ -428,31 +430,26 @@ is worth knowing when a layout bug only appears once the thing is on screen:
 screencapture -x -o -l $(...window id from CGWindowListCopyWindowInfo...) out.png
 ```
 
-## What is shared with the firmware, and what is not
+## What came from the ESP32 panel
 
-The interest-area *keys, labels and colours* are shared with `AREA_STYLES` in
-`firmware/src/news_ui.cpp`, as is the score band. **Adding an interest area to
-`interests.yaml` means adding it in both places.** An unknown area falls back
-to a neutral `NEWS` card rather than disappearing.
+The panel is retired and `firmware/` is out of the tree — the `firmware-final`
+tag has it. Three things it left behind, worth knowing before you change them:
 
-The colours used to be deliberately unshared — the device painted a small
-badge on a dark navy card, this painted the whole card — but the firmware has
-since taken this deck wholesale onto the 172×640 panel and paints whole cards
-too, so both now run the same wallpaper palette. A tint that fails on one is a
-bug on the other.
+**The interest-area keys, labels and colours** were shared with `AREA_STYLES`
+in `news_ui.cpp`, as was the score band. That sync obligation is gone; `Theme`
+is now the only reader. **Adding an interest area to `interests.yaml` still
+means adding it to `AreaStyle`** — an unknown area falls back to a neutral
+`NEWS` card rather than disappearing — but that is two places, not three.
 
-**The deck itself is shared as a design, not as code.** The device rebuilds it
-in LVGL, and two things did not survive the trip: there is no 3D flip and no
-blur, because LVGL 8 has neither, and scaling a card is impossible in practice
-because LVGL renders transformed objects through a full-size intermediate
-buffer it cannot afford. Depth over there is real geometry — narrower, lower
-ledges — plus a slide and a fade. `firmware/CLAUDE.md` has the details.
+**The deck was shared as a design, not as code.** The panel rebuilt it in LVGL
+and two things never survived the trip: no 3D flip and no blur, because LVGL 8
+has neither. That constraint no longer applies to anything, so the deck here is
+free to use effects that were previously off the table for parity.
 
-Type weight diverges for the same reason it always did: LVGL ships Montserrat
-in one weight, so the device builds hierarchy from size and colour alone,
-while the whole San Francisco family is available here. The device also runs
-its ink opacities a few points higher, because 16-bit colour quantises the
-blend and there is no bold to compensate with.
+**The ink opacities** are a few points lighter here than the panel ran them,
+because 16-bit colour quantised the blend over there and there was no bold
+weight to compensate with. The values in `Theme` are the ones tuned for this
+screen; the `// was INK_*` comments record where they came from.
 
 Audio format is **not** hardcoded — it is read from the `X-Sample-Rate` /
 `X-Bits-Per-Sample` / `X-Channels` headers the backend sends. `tts.py`

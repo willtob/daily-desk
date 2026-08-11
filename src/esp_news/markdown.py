@@ -18,9 +18,10 @@ different capabilities, and it has to survive all of them:
   consumer that would have broken silently — nobody reviews the audio.
 
 So the rule is: emit the subset, and strip it anywhere it cannot be rendered.
-``strip_markdown`` is the reference implementation. There are ports of it in
-``firmware/src/news_ui.cpp`` and ``desktop/Sources/ESPNewsWidget`` — if the
-subset changes here, it changes in all three.
+``strip_markdown`` is the reference implementation, with one port of it in
+``desktop/Sources/ESPNewsWidget`` — if the subset changes here, it changes
+there too. There was a third copy on the ESP32 panel; see the firmware-final
+tag.
 """
 
 from __future__ import annotations

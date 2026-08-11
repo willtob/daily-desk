@@ -14,12 +14,10 @@
 //  light, saturated cards is what both reference designs do, and it is what
 //  lets a card read as a lit object rather than as a coloured rectangle.
 //
-//  These colours are now shared with firmware/src/news_ui.cpp. They used to
-//  diverge on purpose — the device painted a small badge on a dark navy card
-//  and needed eight hues that separate at badge size — but the firmware has
-//  since taken this deck wholesale and paints whole cards in the tint too, so
-//  it needs the same wallpaper palette to do it. Keys, labels and colours all
-//  have to stay in sync now; see AreaStyle.
+//  These colours were shared with news_ui.cpp on the ESP32 panel, which took
+//  this deck wholesale and painted whole cards in the tint too. The panel is
+//  retired (see the firmware-final tag) and this file is now the only reader,
+//  so nothing here has to be mirrored anywhere any more.
 //
 //  What still diverges is weight. LVGL ships Montserrat in a single weight, so
 //  the device builds hierarchy from size and colour alone. Here the whole San
@@ -57,8 +55,8 @@ enum Theme {
     /// stays correct on every tint from #FEE182 to #D6683F.
     static func inkSoft(_ alpha: Double = cardExcerpt) -> Color { ink.opacity(alpha) }
 
-    // Ink levels, now shared with the firmware's INK_* constants so a story
-    // reads the same on both screens.
+    // Ink levels. The INK_* comments are what the panel's constants were, kept
+    // because they record the byte values these opacities were derived from.
     //
     // These were 0.58 for the card excerpt and 0.82 for the body, on the
     // reasoning that this side has the whole San Francisco family and can
@@ -66,10 +64,10 @@ enum Theme {
     // principle; the values were still too light to read comfortably on either.
     // The prose is the content — it gets full-strength ink, and hierarchy comes
     // from size and spacing. Only genuinely secondary things stay knocked back.
-    static let cardExcerpt: Double = 0.84   // firmware INK_SOFT   214/255
-    static let source:      Double = 0.71   // firmware INK_SOURCE 180/255
-    static let bodyInk:     Double = 1.00   // firmware INK_BODY   255/255
-    static let hairline:    Double = 0.25   // firmware INK_HAIRLINE 64/255
+    static let cardExcerpt: Double = 0.84   // was INK_SOFT     214/255
+    static let source:      Double = 0.71   // was INK_SOURCE   180/255
+    static let bodyInk:     Double = 1.00   // was INK_BODY     255/255
+    static let hairline:    Double = 0.25   // was INK_HAIRLINE  64/255
 
     // MARK: - Type
     //
@@ -92,7 +90,7 @@ enum Theme {
 
     static let metaTracking: CGFloat = 0.9
     static let titleLeading: CGFloat = 1.5
-    static let bodyLeading:  CGFloat = 5   // firmware runs 6 at 14 px; scaled
+    static let bodyLeading:  CGFloat = 5   // the panel ran 6 at 14 px; scaled
 
     // MARK: - Layout
 
@@ -134,11 +132,10 @@ enum Theme {
 
 /// Badge text and card tint for an interest area.
 ///
-/// The keys must match `matched_area` from the Python score node, and the
-/// labels *and colours* are shared with `AREA_STYLES` in
-/// firmware/src/news_ui.cpp — **adding an area to interests.yaml means adding
-/// it in both places.** Both readers now paint the whole card in the tint, so
-/// a colour that only works on one of them is a bug on the other.
+/// The keys must match `matched_area` from the Python score node — **adding an
+/// area to interests.yaml means adding it here too**, or it falls back to the
+/// neutral NEWS card. That was a three-way sync while the ESP32 panel had its
+/// own `AREA_STYLES`; it is now just these two.
 ///
 /// Labels are abbreviated because they have to survive a narrow column. The
 /// device has 140 px; this card has about 250.
