@@ -384,7 +384,7 @@ def test_a_grader_timeout_is_a_504(client, grader):
 
 
 def test_a_missing_api_key_is_a_503(client, grader):
-    from esp_news.embeddings import MissingAPIKeyError
+    from esp_news.clients.embeddings import MissingAPIKeyError
 
     grader.error = MissingAPIKeyError("OPENAI_API_KEY is not set")
     session_id = start(client)

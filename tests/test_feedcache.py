@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from esp_news.feedcache import STALE_AFTER_HOURS, CachedFeed, FeedCache
+from esp_news.storage.feedcache import STALE_AFTER_HOURS, CachedFeed, FeedCache
 from esp_news.nodes.dedup import dedup_articles
 from esp_news.nodes.ingest import ingest_articles
 from tests.conftest import FakeParsed, entry, make_config

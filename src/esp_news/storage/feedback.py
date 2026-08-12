@@ -60,13 +60,13 @@ from esp_news.nodes.dedup import _canonical_url
 
 logger = logging.getLogger(__name__)
 
-# Next to interests.yaml: src/esp_news/feedback.py -> parents[2].
-DEFAULT_FEEDBACK_PATH = Path(__file__).resolve().parents[2] / "feedback.jsonl"
+# Next to interests.yaml: src/esp_news/storage/feedback.py -> parents[3].
+DEFAULT_FEEDBACK_PATH = Path(__file__).resolve().parents[3] / "feedback.jsonl"
 
 # The lookup side-car lives in .cache/ because it is disposable: losing it means
 # a verdict on an older digest falls back to the displayed summary, and the next
 # pipeline run repopulates it.
-DEFAULT_INDEX_PATH = Path(__file__).resolve().parents[2] / ".cache" / "article-index.json"
+DEFAULT_INDEX_PATH = Path(__file__).resolve().parents[3] / ".cache" / "article-index.json"
 
 LIKE = "like"
 DISLIKE = "dislike"

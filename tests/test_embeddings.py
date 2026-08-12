@@ -19,7 +19,7 @@ import time
 import numpy as np
 import pytest
 
-from esp_news.embeddings import (
+from esp_news.clients.embeddings import (
     EVICT_AFTER_DAYS,
     EmbeddingClient,
     MissingAPIKeyError,

@@ -1,9 +1,10 @@
 """Phase 9b — LLM summaries of article text, with an on-disk cache.
 
 Separate from the node (``nodes/summarize.py``) for the same reason
-``embeddings.py`` is separate from ``nodes/score.py``: the client is about
-talking to OpenAI and not paying twice for the same work, the node is about
-what the pipeline does with it.
+``clients/embeddings.py`` is separate from ``nodes/score.py``: the client is
+about talking to OpenAI and not paying twice for the same work, the node is
+about what the pipeline does with it. Named ``summarizer.py``, not
+``summarize.py``, so the two files don't share a bare name across editor tabs.
 
 Runs on the **Responses API** rather than chat completions. The gpt-5 family
 are reasoning models, and ``responses.create`` is where ``reasoning`` and
@@ -25,12 +26,12 @@ from pathlib import Path
 
 from openai import OpenAI
 
-from esp_news.embeddings import MissingAPIKeyError
+from esp_news.clients.embeddings import MissingAPIKeyError
 
 logger = logging.getLogger(__name__)
 
-# .cache/summaries.json — src/esp_news/summarize.py -> parents[2].
-DEFAULT_SUMMARY_CACHE = Path(__file__).resolve().parents[2] / ".cache" / "summaries.json"
+# .cache/summaries.json — src/esp_news/clients/summarizer.py -> parents[3].
+DEFAULT_SUMMARY_CACHE = Path(__file__).resolve().parents[3] / ".cache" / "summaries.json"
 
 DEFAULT_SUMMARY_MODEL = os.getenv("ESP_NEWS_SUMMARY_MODEL", "gpt-5.4-mini")
 

@@ -27,9 +27,9 @@ import logging
 
 from langsmith import traceable
 
-from esp_news.extract import MIN_USABLE_CHARS, ArticleFetcher
+from esp_news.clients.extract import MIN_USABLE_CHARS, ArticleFetcher
 from esp_news.models import Article
-from esp_news.summarize import Summarizer
+from esp_news.clients.summarizer import Summarizer
 
 logger = logging.getLogger(__name__)
 

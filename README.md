@@ -26,6 +26,28 @@ uv sync
 cp .env.example .env   # then add your keys
 ```
 
+## Code layout
+```
+src/esp_news/
+    api.py          FastAPI app — serves the digest, feedback, and learn endpoints
+    cli.py           entry points for esp-ingest/-dedup/-score/-curate/-summarize/-digest/-serve
+    graph.py         wires the phase nodes below into one LangGraph pipeline
+    models.py        the Article/DigestState types every node passes around
+    markdown.py      the summary's markdown subset, and how to strip it
+    tracing.py       LangSmith setup
+    nodes/           one file per pipeline phase: ingest, dedup, score, curate, summarize, digest
+    clients/         talks to an external service, each with its own on-disk cache:
+                     embeddings, article-text extraction, LLM summaries, TTS
+    config/          typed loaders for the hand-edited YAML profiles (feeds.yaml, interests.yaml)
+    storage/         cross-run state: feedback verdicts, the feed cache, what's already been shown
+    learn/           the 15-minute learning tab — separate feature, own FastAPI router and SQLite store
+```
+`clients/` and `nodes/` mirror each other on purpose: a client only knows how
+to talk to one API and cache the result, a node only knows what the pipeline
+does with that result. `nodes/summarize.py` (the node) and
+`clients/summarizer.py` (the client) are the clearest example — see either
+file's docstring for why they're split.
+
 ## Feeds
 42 feeds are configured in [feeds.yaml](feeds.yaml), grouped into 10 themes:
 `embedded_wearables`, `big_tech`, `startup_vc`, `ai`, `ai_research`, `ml_applied`,
@@ -160,7 +182,7 @@ becomes visible instead of just getting quietly worse.
 Two caches, both under `.cache/`: fetched page text (one file per URL) and the
 summaries themselves (keyed by model + prompt version + article text). Tuning
 the prompt therefore doesn't re-fetch, and re-running doesn't re-summarize.
-Bump `PROMPT_VERSION` in `summarize.py` when you change the instructions.
+Bump `PROMPT_VERSION` in `clients/summarizer.py` when you change the instructions.
 
 Model defaults to `gpt-5.4-mini` via the Responses API at low reasoning effort;
 override with `--summary-model` or `ESP_NEWS_SUMMARY_MODEL`. A run costs a

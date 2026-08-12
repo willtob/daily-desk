@@ -40,9 +40,9 @@ from pydantic import BaseModel
 # being present in the file.
 load_dotenv()
 
-from esp_news.config import load_feeds_config
-from esp_news.embeddings import MissingAPIKeyError
-from esp_news.feedback import (
+from esp_news.config.feeds import load_feeds_config
+from esp_news.clients.embeddings import MissingAPIKeyError
+from esp_news.storage.feedback import (
     CLEAR,
     DISLIKE,
     LIKE,
@@ -51,7 +51,7 @@ from esp_news.feedback import (
     FeedbackStore,
     index_digest,
 )
-from esp_news.interests import load_interests_profile
+from esp_news.config.interests import load_interests_profile
 from esp_news.learn.api import router as learn_router
 from esp_news.models import Article
 from esp_news.nodes.dedup import _canonical_url
@@ -64,9 +64,9 @@ from esp_news.nodes.digest import (
     write_digest,
     write_digest_json,
 )
-from esp_news.seen import SeenStore
+from esp_news.storage.seen import SeenStore
 from esp_news.tracing import init_tracing
-from esp_news.tts import (
+from esp_news.clients.tts import (
     PCM_BITS,
     PCM_CHANNELS,
     PCM_SAMPLE_RATE,

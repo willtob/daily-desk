@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from esp_news.summarize import Summarizer
+from esp_news.clients.summarizer import Summarizer
 
 JOBS = [(f"Title {i}", "Some Source", f"article body {i} " * 40) for i in range(8)]
 
@@ -154,7 +154,7 @@ def test_bumping_the_prompt_version_stops_the_old_summaries_being_served(
     first.summarize_many(JOBS)
     assert summarizer_factory.clients[0].responses.calls == len(JOBS)
 
-    monkeypatch.setattr("esp_news.summarize.PROMPT_VERSION", "999")
+    monkeypatch.setattr("esp_news.clients.summarizer.PROMPT_VERSION", "999")
 
     second = summarizer_factory()
     second.summarize_many(JOBS)

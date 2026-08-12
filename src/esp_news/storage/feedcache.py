@@ -31,8 +31,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# .cache/feeds/ — src/esp_news/feedcache.py -> parents[2].
-DEFAULT_FEED_CACHE_DIR = Path(__file__).resolve().parents[2] / ".cache" / "feeds"
+# .cache/feeds/ — src/esp_news/storage/feedcache.py -> parents[3].
+DEFAULT_FEED_CACHE_DIR = Path(__file__).resolve().parents[3] / ".cache" / "feeds"
 
 # Past this, a cached copy is old enough that the digest built from it is
 # describing a different morning. Not an expiry — the run still proceeds, loudly

@@ -117,7 +117,7 @@ Planned separately. Notes so the design doesn't paint itself into a corner:
 - Dislikes are more informative per label than likes and much rarer. Consider
   weighting them higher.
 
-> **Status, 9 Aug 2026 — built.** `feedback.py` holds an append-only JSONL log
+> **Status, 9 Aug 2026 — built.** `storage/feedback.py` holds an append-only JSONL log
 > of verdicts; `POST/GET/DELETE /feedback` record and read them; the API
 > contract for client authors is `docs/feedback-api.md`. Scoring folds them into
 > the existing per-area arithmetic: likes are averaged into one extra reference

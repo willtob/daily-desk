@@ -6,11 +6,11 @@ import argparse
 import logging
 from collections import Counter
 
-from esp_news.config import FeedsConfig, load_feeds_config
-from esp_news.embeddings import DEFAULT_CACHE_PATH, EmbeddingClient, MissingAPIKeyError
-from esp_news.feedback import FeedbackStore, index_digest
+from esp_news.config.feeds import FeedsConfig, load_feeds_config
+from esp_news.clients.embeddings import DEFAULT_CACHE_PATH, EmbeddingClient, MissingAPIKeyError
+from esp_news.storage.feedback import FeedbackStore, index_digest
 from esp_news.graph import run_digest_graph
-from esp_news.interests import load_interests_profile
+from esp_news.config.interests import load_interests_profile
 from esp_news.models import Article
 from esp_news.nodes.curate import curate_articles
 from esp_news.nodes.dedup import dedup_articles
@@ -18,8 +18,8 @@ from esp_news.nodes.digest import digest_payload, write_digest, write_digest_jso
 from esp_news.nodes.ingest import ingest_articles
 from esp_news.nodes.score import score_articles
 from esp_news.nodes.summarize import summarize_articles
-from esp_news.seen import SeenStore
-from esp_news.summarize import DEFAULT_SUMMARY_MODEL, DEFAULT_TARGET_CHARS, Summarizer
+from esp_news.storage.seen import SeenStore
+from esp_news.clients.summarizer import DEFAULT_SUMMARY_MODEL, DEFAULT_TARGET_CHARS, Summarizer
 from esp_news.tracing import init_tracing
 
 

@@ -30,8 +30,8 @@ from esp_news.nodes.dedup import _canonical_url
 
 logger = logging.getLogger(__name__)
 
-# Sits next to the generated digests: src/esp_news/seen.py -> parents[2].
-DEFAULT_SEEN_PATH = Path(__file__).resolve().parents[2] / "digests" / "seen.json"
+# Sits next to the generated digests: src/esp_news/storage/seen.py -> parents[3].
+DEFAULT_SEEN_PATH = Path(__file__).resolve().parents[3] / "digests" / "seen.json"
 
 # How long an article stays "seen". Longer than any sane lookback window, but
 # short enough that the file can't grow without bound.

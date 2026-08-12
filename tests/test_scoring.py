@@ -13,7 +13,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from esp_news.interests import InterestArea, InterestProfile
+from esp_news.config.interests import InterestArea, InterestProfile
 from esp_news.models import Article
 from esp_news.nodes.score import DEFAULT_AVOID_LAMBDA, score_articles
 
