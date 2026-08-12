@@ -200,7 +200,7 @@ trimmed back to 400 characters is a teaser again, which is the whole thing that
 phase set out to stop.
 
 ### Pointing the firmware at it
-In `firmware/src/news_client.h`:
+In `news_client.h` (now in `~/Desktop/ESP32/NewsReporter/src/`):
 
 ```c
 #define NEWS_BASE_URL "http://192.168.1.171:8010"
@@ -250,21 +250,17 @@ not on their `PATH`. `RunAtLoad` is deliberately false, so loading the agent or
 rebooting doesn't fire an extra run. If the Mac is asleep at 08:00, launchd runs
 the job when it next wakes.
 
-## The device (Phases 7–8)
-The ESP32 firmware lives in [firmware/](firmware) — same repo, since it's the
-same project. It fetches `/digest.json`, shows the curated stories on a
-172×640 touch panel, and reads them aloud via `/audio/{i}.pcm`.
+## The device (retired)
+The ESP32 build (172×640 touch panel, fetched `/digest.json`, read stories
+aloud via `/audio/{i}.pcm`) is retired as of 2026-08-12. It's no longer part
+of this repo — moved out to `~/Desktop/ESP32/NewsReporter/`, alongside the
+other hardware projects, in case it's ever revisited. Start there with
+`CLAUDE.md` and `HARDWARE.md` in that folder. The `firmware-final` git tag
+here still has the last commit that carried it, if you need this repo's view
+of that history.
 
-Start there with [firmware/CLAUDE.md](firmware/CLAUDE.md); board notes are in
-[docs/HARDWARE.md](docs/HARDWARE.md).
-
-**For UI work, use the desktop simulator** (`firmware/sim/`) rather than
-flashing — it builds the real UI source on the host and can be screenshotted,
-which turns a ~23 s flash-and-squint cycle into ~2 s.
-
-LVGL is not vendored here; it stays with the Waveshare checkout on the Desktop
-and is referenced by absolute path from `firmware/platformio.ini` and
-`firmware/sim/Makefile`.
+`/digest.json` and `/audio/{i}.pcm` remain live endpoints below — nothing
+polls them today, but the contract hasn't changed.
 
 ## Tracing (LangSmith)
 Set in `.env`:
