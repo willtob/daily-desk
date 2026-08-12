@@ -5,6 +5,14 @@
 #   make dev      swift run — faster loop, but no bundle, so the Dock icon
 #                 shows and the Info.plist exemptions do not apply
 #   make install  copy the bundle to /Applications
+#   make reload   install, then relaunch the /Applications copy — the one
+#                 command that is always right. `run` launches build/, but
+#                 if /Applications also has a copy (it usually does — that's
+#                 the one Spotlight and the Dock icon point at) the two share
+#                 a bundle identifier and LaunchServices can resolve a
+#                 double-click or `open` back to the stale one regardless of
+#                 which was just rebuilt. `reload` sidesteps the ambiguity by
+#                 only ever touching the /Applications copy.
 #   make clean
 #
 # There is no Xcode project here on purpose: Command Line Tools plus Swift
@@ -18,7 +26,7 @@ BUILD_DIR := build
 APP       := $(BUILD_DIR)/$(APP_NAME).app
 CONFIG    := release
 
-.PHONY: all run dev install clean
+.PHONY: all run dev install reload clean
 
 all: $(APP)
 
@@ -46,6 +54,10 @@ install: $(APP)
 	rm -rf "/Applications/$(APP_NAME).app"
 	cp -R "$(APP)" /Applications/
 	@echo "installed /Applications/$(APP_NAME).app"
+
+reload: install
+	-pkill -x $(BIN) 2>/dev/null; sleep 1
+	open "/Applications/$(APP_NAME).app"
 
 clean:
 	swift package clean
