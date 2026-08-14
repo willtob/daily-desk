@@ -61,9 +61,9 @@ import logging
 import numpy as np
 from langsmith import traceable
 
-from esp_news.embeddings import EmbeddingClient
-from esp_news.feedback import DISLIKE, LIKE, FeedbackStore
-from esp_news.interests import InterestProfile, load_interests_profile
+from esp_news.clients.embeddings import EmbeddingClient
+from esp_news.storage.feedback import DISLIKE, LIKE, FeedbackStore
+from esp_news.config.interests import InterestProfile, load_interests_profile
 from esp_news.models import Article
 
 logger = logging.getLogger(__name__)

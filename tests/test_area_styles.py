@@ -16,11 +16,12 @@ Swift source as text on purpose: the alternative is a build, and a grep that
 fails the moment a key is renamed buys most of the value for none of the cost.
 
 This was a three-way check while the ESP32 panel had its own `AREA_STYLES[]` in
-`news_ui.cpp`. The panel is retired (see the `firmware-final` tag) and those
-cases are gone with it, including the one asserting labels fit in 8 characters —
-that was the 140 px badge column on the 172×640 panel, and nothing here is
-width-constrained the same way. If a length limit is wanted for the widget it
-needs measuring against this layout, not inheriting from that one.
+`news_ui.cpp`. The panel is retired — it moved to `~/Desktop/ESP32/NewsReporter/`
+and the `firmware-final` tag has this repo's last copy — and those cases are gone
+with it, including the one asserting labels fit in 8 characters. That was the
+140 px badge column on the 172×640 panel, and nothing here is width-constrained
+the same way. If a length limit is wanted for the widget it needs measuring
+against this layout, not inheriting from that one.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from esp_news.interests import load_interests_profile
+from esp_news.config.interests import load_interests_profile
 
 REPO = Path(__file__).resolve().parents[1]
 SWIFT_THEME = REPO / "desktop" / "Sources" / "ESPNewsWidget" / "Theme.swift"

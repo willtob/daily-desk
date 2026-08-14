@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
-from esp_news.embeddings import MissingAPIKeyError
+from esp_news.clients.embeddings import MissingAPIKeyError
 from esp_news.learn.topics import Topic
 
 logger = logging.getLogger(__name__)

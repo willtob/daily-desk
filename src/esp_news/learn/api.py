@@ -25,7 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from openai import APITimeoutError, OpenAIError
 from pydantic import BaseModel, Field
 
-from esp_news.embeddings import MissingAPIKeyError
+from esp_news.clients.embeddings import MissingAPIKeyError
 from esp_news.learn.grade import Grade, Grader
 from esp_news.learn.store import AlreadyGradedError, LearnStore, qualifying_days
 from esp_news.learn.streaks import current_streak, local_day, longest_streak, resolve_zone, today_in

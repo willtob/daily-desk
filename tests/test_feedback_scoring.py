@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import pytest
 
-from esp_news.feedback import DISLIKE, LIKE, FeedbackStore
-from esp_news.interests import InterestArea, InterestProfile
+from esp_news.storage.feedback import DISLIKE, LIKE, FeedbackStore
+from esp_news.config.interests import InterestArea, InterestProfile
 from esp_news.models import Article
 from esp_news.nodes.score import (
     LEARNED_AVOID_LAMBDA,

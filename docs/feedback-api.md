@@ -5,7 +5,7 @@ session that builds the macOS gesture — if something here is ambiguous it is a
 bug in this file, not a judgement call for the client.
 
 ```bash
-cd ~/dev/esp-news-reporter && uv run esp-serve --port 8010
+cd ~/dev/daily-desk && uv run esp-serve --port 8010
 ```
 
 **Port 8010, not 8000** — Docker holds 8000 on this Mac. Base URL below is

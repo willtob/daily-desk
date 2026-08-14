@@ -7,8 +7,8 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field
 
-# feeds.yaml lives at the repo root: src/esp_news/config.py -> parents[2].
-DEFAULT_FEEDS_PATH = Path(__file__).resolve().parents[2] / "feeds.yaml"
+# feeds.yaml lives at the repo root: src/esp_news/config/feeds.py -> parents[3].
+DEFAULT_FEEDS_PATH = Path(__file__).resolve().parents[3] / "feeds.yaml"
 
 
 class FeedSource(BaseModel):

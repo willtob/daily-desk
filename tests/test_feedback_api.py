@@ -18,8 +18,9 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from esp_news import api, feedback
-from esp_news.feedback import FeedbackStore
+from esp_news import api
+from esp_news.storage import feedback
+from esp_news.storage.feedback import FeedbackStore
 from esp_news.models import Article
 
 DIGEST_URL = "https://example.test/on-the-page"

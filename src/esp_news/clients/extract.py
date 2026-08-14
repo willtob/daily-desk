@@ -36,8 +36,8 @@ logger = logging.getLogger(__name__)
 # belong in the digest run's output.
 logging.getLogger("trafilatura").setLevel(logging.ERROR)
 
-# .cache/pages/ — src/esp_news/extract.py -> parents[2].
-DEFAULT_PAGE_CACHE_DIR = Path(__file__).resolve().parents[2] / ".cache" / "pages"
+# .cache/pages/ — src/esp_news/clients/extract.py -> parents[3].
+DEFAULT_PAGE_CACHE_DIR = Path(__file__).resolve().parents[3] / ".cache" / "pages"
 
 # Same browser-ish UA as the ingest node, for the same reason: a bare client
 # gets 403'd by half the major outlets.

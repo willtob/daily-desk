@@ -16,10 +16,10 @@ from datetime import date
 
 from langgraph.graph import END, START, StateGraph
 
-from esp_news.config import FeedsConfig
-from esp_news.embeddings import EmbeddingClient
-from esp_news.feedback import FeedbackStore
-from esp_news.interests import InterestProfile
+from esp_news.config.feeds import FeedsConfig
+from esp_news.clients.embeddings import EmbeddingClient
+from esp_news.storage.feedback import FeedbackStore
+from esp_news.config.interests import InterestProfile
 from esp_news.models import DigestState
 from esp_news.nodes.curate import curate_articles
 from esp_news.nodes.dedup import dedup_articles
@@ -27,8 +27,8 @@ from esp_news.nodes.digest import render_digest
 from esp_news.nodes.ingest import ingest_articles
 from esp_news.nodes.score import score_articles
 from esp_news.nodes.summarize import summarize_articles
-from esp_news.seen import SeenStore
-from esp_news.summarize import Summarizer
+from esp_news.storage.seen import SeenStore
+from esp_news.clients.summarizer import Summarizer
 
 logger = logging.getLogger(__name__)
 

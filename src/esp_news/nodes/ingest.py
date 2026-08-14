@@ -38,8 +38,8 @@ from urllib.parse import urlparse
 import feedparser
 from langsmith import traceable
 
-from esp_news.config import FeedSource, FeedsConfig
-from esp_news.feedcache import DEFAULT_FEED_CACHE_DIR, STALE_AFTER_HOURS, FeedCache
+from esp_news.config.feeds import FeedSource, FeedsConfig
+from esp_news.storage.feedcache import DEFAULT_FEED_CACHE_DIR, STALE_AFTER_HOURS, FeedCache
 from esp_news.models import Article
 
 logger = logging.getLogger(__name__)

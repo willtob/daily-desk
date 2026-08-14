@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from esp_news.config import FeedSource, FeedsConfig, Settings
+from esp_news.config.feeds import FeedSource, FeedsConfig, Settings
 
 RECENT = datetime.now(timezone.utc) - timedelta(hours=1)
 

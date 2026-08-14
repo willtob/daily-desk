@@ -11,10 +11,10 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field, field_validator
 
-from esp_news.embeddings import DEFAULT_MODEL
+from esp_news.clients.embeddings import DEFAULT_MODEL
 
-# interests.yaml lives at the repo root: src/esp_news/interests.py -> parents[2].
-DEFAULT_INTERESTS_PATH = Path(__file__).resolve().parents[2] / "interests.yaml"
+# interests.yaml lives at the repo root: src/esp_news/config/interests.py -> parents[3].
+DEFAULT_INTERESTS_PATH = Path(__file__).resolve().parents[3] / "interests.yaml"
 
 
 class InterestArea(BaseModel):

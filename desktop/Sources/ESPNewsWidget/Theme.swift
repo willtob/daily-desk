@@ -14,10 +14,14 @@
 //  light, saturated cards is what both reference designs do, and it is what
 //  lets a card read as a lit object rather than as a coloured rectangle.
 //
-//  These colours were shared with news_ui.cpp on the ESP32 panel, which took
-//  this deck wholesale and painted whole cards in the tint too. The panel is
-//  retired (see the firmware-final tag) and this file is now the only reader,
-//  so nothing here has to be mirrored anywhere any more.
+//  These colours used to diverge on purpose from the retired ESP32 firmware's
+//  news_ui.cpp — the device painted a small badge on a dark navy card and
+//  needed eight hues that separate at badge size — but the firmware later
+//  took this deck wholesale and painted whole cards in the tint too, so it
+//  needed the same wallpaper palette to do it. Now that the firmware lives at
+//  ~/Desktop/ESP32/NewsReporter/ and isn't built from this repo (the
+//  firmware-final tag has this repo's last copy), this widget is the only
+//  reader left; see AreaStyle.
 //
 //  What still diverges is weight. LVGL ships Montserrat in a single weight, so
 //  the device builds hierarchy from size and colour alone. Here the whole San

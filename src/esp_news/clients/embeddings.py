@@ -57,8 +57,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "text-embedding-3-small"
 
-# .cache/ lives at the repo root: src/esp_news/embeddings.py -> parents[2].
-DEFAULT_CACHE_PATH = Path(__file__).resolve().parents[2] / ".cache" / "embeddings.db"
+# .cache/ lives at the repo root: src/esp_news/clients/embeddings.py -> parents[3].
+DEFAULT_CACHE_PATH = Path(__file__).resolve().parents[3] / ".cache" / "embeddings.db"
 
 # How long an unused vector is kept. A week spans any normal gap between runs,
 # so in practice only articles that fell out of the lookback window expire.

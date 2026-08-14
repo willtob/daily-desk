@@ -22,13 +22,13 @@ from pathlib import Path
 
 from openai import OpenAI
 
-from esp_news.embeddings import MissingAPIKeyError
+from esp_news.clients.embeddings import MissingAPIKeyError
 from esp_news.markdown import strip_markdown
 
 logger = logging.getLogger(__name__)
 
-# digests/audio/ — src/esp_news/tts.py -> parents[2].
-DEFAULT_AUDIO_DIR = Path(__file__).resolve().parents[2] / "digests" / "audio"
+# digests/audio/ — src/esp_news/clients/tts.py -> parents[3].
+DEFAULT_AUDIO_DIR = Path(__file__).resolve().parents[3] / "digests" / "audio"
 
 DEFAULT_TTS_MODEL = "gpt-4o-mini-tts"
 DEFAULT_VOICE = "alloy"

@@ -13,7 +13,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from esp_news.feedback import (
+from esp_news.storage.feedback import (
     DISLIKE,
     LIKE,
     ArticleIndex,

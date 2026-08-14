@@ -20,7 +20,7 @@ from collections import Counter
 from langsmith import traceable
 
 from esp_news.models import Article
-from esp_news.seen import SeenStore
+from esp_news.storage.seen import SeenStore
 
 logger = logging.getLogger(__name__)
 
