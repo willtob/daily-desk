@@ -1,294 +1,165 @@
-# ESP News Reporter
+# Daily Desk
 
-Personalized tech news digest. A LangGraph pipeline that pulls articles from RSS
-feeds, scores them against a personal interest profile using embedding similarity
-(the "fitness function"), and renders a curated markdown digest.
+**A small window that sits on my Mac desktop, shows me the handful of news
+stories actually worth reading today, and gives me fifteen minutes of study
+that gets graded.**
 
-Runs on demand from the CLI, every morning at 08:00 via launchd, or on a button
-press from the device — see [When the feeds actually update](#when-the-feeds-actually-update).
-[esp-news-plan.md](esp-news-plan.md) has the full build plan.
+<table>
+  <tr>
+    <td width="33%"><img src="docs/images/deck.png" alt="The news deck: a card showing one story, with the rest of the digest stacked behind it" width="100%"></td>
+    <td width="33%"><img src="docs/images/story.png" alt="An opened story with its summary and a Listen button" width="100%"></td>
+    <td width="33%"><img src="docs/images/learn-result.png" alt="The learning tab's result screen, scoring an explanation 6 out of 10 with what was missed" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><em>Flip through the day</em></td>
+    <td align="center"><em>Open one and read it</em></td>
+    <td align="center"><em>Or get graded on what you know</em></td>
+  </tr>
+</table>
 
-## Status
-- [x] Phase 0 — repo & environment setup
-- [x] Phase 1 — ingest node (fetch + filter RSS)
-- [x] Phase 2 — dedup / normalize
-- [x] Phase 3 — score (fitness function)
-- [x] Phase 4 — curate
-- [x] Phase 5 — digest output (v1 complete)
-- [x] Phase 6 — FastAPI endpoint serving the digest to the ESP32
-- [x] Phase 9 — fetch the real article and write a proper summary with an LLM
+## What it is, in plain English
 
-## Setup
-Requires [uv](https://docs.astral.sh/uv/).
+Most news apps show you everything and leave you to do the sorting. This one
+does the sorting first.
+
+Every morning at 8am, a program on my Mac reads about fifty news sites,
+throws away everything I wouldn't care about, writes a short honest summary
+of the ten stories that survive, and leaves them on my desktop as a small
+stack of cards. I flip through them with an arrow button. If one looks
+interesting I click it, and the card opens out into the full summary — or I
+press **Listen** and it reads the story aloud.
+
+That's the whole thing. No app to launch, no feed to scroll, no
+notifications. It just sits on the desktop behind my windows, like a sticky
+note that keeps itself up to date.
+
+## How it decides what's worth reading
+
+I wrote down what I'm interested in — twelve subjects, in ordinary English
+sentences. Things like *small AI models running on battery-powered devices*,
+or *what's on in Barcelona this weekend*. That file is the whole
+configuration; there is no algorithm learning about me in the background that
+I can't see or edit.
+
+Every new article gets compared against those descriptions and scored from 0
+to 1. The comparison is done by **meaning, not keywords** — an article about
+"on-device inference" matches "AI running on small hardware" without either
+phrase appearing in the other. Only the best ten make the cut, and each one
+arrives with a note saying which subject it matched and how strongly, so when
+something wrong shows up I can see why and fix the description.
+
+Three deliberate rules keep it from getting boring:
+
+- **No subject can take over the page.** Barcelona's newspapers publish far
+  more than the engineering blogs do, so a straight top-ten would be local
+  news every day. Any one subject is capped, and the empty slots get filled
+  by the next best stories.
+- **One story a day is chosen on purpose to be off-profile.** A system that
+  only shows you things matching what you already like can never show you
+  something new. So one card every day — marked **WILDCARD** — is picked at
+  random from the middle of the pile: related to my interests, but not
+  something the profile would ever have chosen.
+- **It remembers what I actually liked.** A thumbs up or down on any story is
+  kept and fed back into the scoring, so the written profile handles what I
+  *say* I want and the record of my choices handles what I *actually* read.
+
+Stories I've already been shown don't come back for 45 days.
+
+## The other half: fifteen minutes of learning
+
+<img src="docs/images/learn-timer.png" alt="The learning tab mid-session: a topic name, a countdown at 9:12, and the widget's own border draining as the timer runs" width="280" align="right">
+
+The second tab is a study habit rather than a reader. It picks one of 78
+machine-learning topics at random, starts a fifteen-minute timer, and then
+asks me to explain that topic from memory in my own words. An AI grades the
+explanation against a checklist of what a good answer contains — a checklist
+I never get to see beforehand, because if I could read it the exercise would
+be reading rather than recall. It comes back with a score, the specific
+things I missed, and the things I got right. Streaks and a rolling average
+are kept.
+
+The countdown is the widget's own border, draining from the top as the
+fifteen minutes run down, the way the iPhone's Dynamic Island does it. On a
+window this small, a timer that costs no space is the difference between the
+countdown being readable and being an afterthought.
+
+## Where it started: a thing on my desk
+
+This began as physical hardware — a small ESP32 microcontroller with a narrow
+touch screen, sitting on the desk showing the same digest and reading stories
+aloud through a speaker. That device is retired now, but the card deck, the
+colour palette and the open-a-story animation were all designed for it first
+and then brought over to the Mac. The backend still speaks the exact same
+protocol the device used, so it could be plugged back in tomorrow.
+
+## How it's built
+
+```
+50 news feeds
+      │
+      ▼
+  fetch  →  remove duplicates  →  score against my interests
+      │
+      ▼
+  pick the best 10  →  fetch each real article  →  write a summary
+      │
+      ▼
+  a small web server on my Mac  ──►  the desktop widget
+```
+
+| Part | Built with |
+|---|---|
+| The pipeline that reads and ranks the news | Python, LangGraph |
+| The server the widget talks to | FastAPI |
+| The desktop widget itself | Swift and SwiftUI, no Xcode project — it builds with the command line tools alone |
+| Ranking, summaries, grading, narration | OpenAI embeddings, a small reasoning model, text-to-speech |
+| Storage | plain files for the digests, SQLite for the learning history |
+| Scheduling | macOS launchd, every morning at 08:00 |
+
+A few decisions worth knowing about, since they're the interesting part:
+
+- **The summaries are written from the real article, not the feed blurb.**
+  What RSS hands over is usually a teaser cut off mid-sentence, or in Hacker
+  News's case just a score and a comment count. So the program fetches the
+  actual page and summarizes that. If the fetch fails — paywall, blocked
+  request — the original blurb stands rather than having an AI invent a
+  summary from a headline. Every summary carries a marker saying which of
+  those happened, so a source quietly breaking is visible instead of just
+  slowly getting worse.
+- **Summarizing happens last, not first.** Ranking uses the cheap feed text,
+  because it only has to be good enough to sort. Summarizing ~500 articles
+  and then discarding 490 of them would be the expensive way round.
+- **Everything expensive is cached on disk.** Re-running while tuning the
+  interest profile costs almost nothing — only genuinely new text hits the
+  API. A full run is a fraction of a cent.
+- **The widget is a front end and nothing more.** It knows about a URL and
+  some JSON; it knows nothing about feeds, scoring or AI. That's why the same
+  backend drove a microcontroller and a Mac app without changes.
+- **215 tests**, covering the ranking, the caching, the feedback maths, the
+  API contracts and the widget's layout.
+
+Roughly 9,000 lines of Python and 5,500 of Swift.
+
+## Running it
+
+Needs [uv](https://docs.astral.sh/uv/) and an OpenAI API key.
 
 ```bash
 uv sync
-cp .env.example .env   # then add your keys
+cp .env.example .env          # then add your key
+
+uv run esp-digest             # build today's digest and print it
+uv run esp-serve --port 8010  # serve it
+
+cd desktop && make run        # build and launch the widget
 ```
 
-## Code layout
-```
-src/esp_news/
-    api.py          FastAPI app — serves the digest, feedback, and learn endpoints
-    cli.py           entry points for esp-ingest/-dedup/-score/-curate/-summarize/-digest/-serve
-    graph.py         wires the phase nodes below into one LangGraph pipeline
-    models.py        the Article/DigestState types every node passes around
-    markdown.py      the summary's markdown subset, and how to strip it
-    tracing.py       LangSmith setup
-    nodes/           one file per pipeline phase: ingest, dedup, score, curate, summarize, digest
-    clients/         talks to an external service, each with its own on-disk cache:
-                     embeddings, article-text extraction, LLM summaries, TTS
-    config/          typed loaders for the hand-edited YAML profiles (feeds.yaml, interests.yaml)
-    storage/         cross-run state: feedback verdicts, the feed cache, what's already been shown
-    learn/           the 15-minute learning tab — separate feature, own FastAPI router and SQLite store
-```
-`clients/` and `nodes/` mirror each other on purpose: a client only knows how
-to talk to one API and cache the result, a node only knows what the pipeline
-does with that result. `nodes/summarize.py` (the node) and
-`clients/summarizer.py` (the client) are the clearest example — see either
-file's docstring for why they're split.
+## More detail
 
-## Feeds
-42 feeds are configured in [feeds.yaml](feeds.yaml), grouped into 10 themes:
-`embedded_wearables`, `big_tech`, `startup_vc`, `ai`, `ai_research`, `ml_applied`,
-`eng_blogs`, `florida`, `barcelona_dates`, `spain`. Edit freely.
-
-`barcelona_dates` is the what's-on half of Barcelona, separate from `spain`'s
-what-happened: Barcelona Secreta, Time Out, La Vanguardia's food section,
-Barcelona Cultura and betevé's weekend agenda. All five publish in Spanish or
-Catalan, which is why the matching interest area carries reference phrases in
-both.
-
-The theme is only a provenance tag — scoring happens against the interest areas in
-[interests.yaml](interests.yaml), and any feed can win on any area.
-
-## Running Phase 1 (ingest)
-```bash
-uv run esp-ingest              # uses the lookback window from feeds.yaml
-uv run esp-ingest --hours 72   # override the lookback window
-```
-Prints article counts per source and per theme.
-
-## Running Phase 2 (dedup)
-```bash
-uv run esp-dedup                  # ingest, then normalize + collapse duplicates
-uv run esp-dedup --threshold 0.5  # looser title-similarity merging
-```
-
-## Running Phase 3 (score)
-Needs `OPENAI_API_KEY` in `.env` (embeddings: `text-embedding-3-small`).
-
-```bash
-uv run esp-score                # ingest -> dedup -> score, prints top 15 + bottom 5
-uv run esp-score --top 25
-uv run esp-score --no-cache     # re-embed everything instead of reusing .cache/
-```
-
-The interest profile lives in [interests.yaml](interests.yaml) — that file is the
-fitness function, and it's meant to be edited. Each area has prose (`description`),
-concrete headline-ish phrases (`references`), and a `weight`. An article's score is
-its single best match across all areas, so it only has to be strong on one thing.
-
-Embeddings are cached in `.cache/embeddings.json` keyed by model + text, so
-re-running while tuning the profile is nearly free — only new text hits the API.
-
-## Running Phases 4–5 (curate + digest)
-```bash
-uv run esp-curate               # rank + cap + suppress repeats, print the front page
-uv run esp-digest               # run the whole graph, print and write digests/<date>.md
-uv run esp-digest --dry-run     # print only — writes nothing, marks nothing as seen
-uv run esp-digest --top 15 --per-area-cap 4
-uv run esp-digest --no-seen     # allow articles from earlier digests to reappear
-uv run esp-digest --no-wildcard # drop the mid-ranked exploration article
-uv run esp-digest --no-feedback # score from interests.yaml alone, ignoring verdicts
-```
-
-`esp-digest` is the v1 entry point: it runs the full LangGraph pipeline
-(`ingest → dedup → score → curate → summarize → digest`), prints the markdown,
-writes it to `digests/YYYY-MM-DD.md`, and records what it showed.
-
-**Per-area cap.** A pure top-N by score would hand back a page of Barcelona
-city news most days — those papers simply publish more than the tech blogs. The
-cap (default 3) limits any one interest area; if that leaves the page short, a
-second pass backfills by score, so the cap shapes the page without shrinking it.
-
-**Cross-run suppression.** `digests/seen.json` remembers which articles have
-already appeared, keyed by canonical URL so a link that picks up tracking params
-still counts. Entries expire after 45 days.
-
-A URL is not always one article, though: Time Out's "what to do this weekend"
-and the papers' weekly agendas are rolling pages, one fixed URL re-dated every
-week with new content. So the check is URL *and* date — an article published
-after the day it was last shown counts as new again, which is what keeps a
-weekly roundup from appearing once and then being hidden for the whole
-retention window. A source that bumps its publish date on a copy-edit can
-re-show a story that way; requiring a later calendar day keeps that rare.
-
-Only articles that actually made a
-digest are recorded, and only after the file is written — a crash mid-run can't
-silently suppress them from the next one. Use `--no-seen` to ignore it.
-
-**The wildcard.** After the ranked page, the digest carries one extra article
-that was *not* picked by score — its own `## wildcard` section at the end of
-the markdown, last in the JSON, and a cool-tinted `WILDCARD` card on the device
-and the widget. The profile is a fitness function, so left alone it can only
-ever return more of what it already matches; this is the one slot it doesn't
-control. It's drawn uniformly at random from the 40th–70th percentile of the
-score distribution — mid-pack, adjacent to something in the profile but not
-central enough to win a slot. The bottom quartile, which this used to draw from,
-turned out to be the same handful of shapes every day (a two-line sports result,
-a weather bulletin): random without being a discovery. `--no-wildcard` turns it
-off.
-
-Each entry carries a why-it-scored line — winning area, score, and runner-up.
-That's what makes the digest log useful for tuning `interests.yaml`: when a
-story looks wrong, the line shows whether it won on the area you'd expect.
-
-## Running Phase 9 (real summaries)
-```bash
-uv run esp-summarize --no-seen        # RSS blurb vs. LLM summary, side by side
-uv run esp-summarize --target-chars 600
-uv run esp-digest --no-llm            # skip it — RSS blurbs, no fetch, no cost
-```
-
-What the feeds hand over is often not a summary. Hacker News ships
-`Article URL: … Points: 58 # Comments: 32`; publisher feeds ship a teaser cut
-mid-sentence to make you click. So this node **fetches the article itself** and
-has an LLM write the summary from the real text.
-
-It runs **after curate**, not before. Curate takes ~500 scored articles down to
-10; summarizing earlier would mean fetching and summarizing 500 pages to throw
-490 away. Scoring keeps using the cheap RSS text — it only needs enough signal
-to rank.
-
-Two rules keep it honest:
-
-- **No text, no summary.** If the fetch fails — paywall, 403, JS-only page —
-  the RSS summary stands. Expanding `Points: 58 # Comments: 32` into a
-  paragraph doesn't recover the article, it invents one. The exception is a
-  feed that already ships a full body in its RSS (Reddit selftext), which is
-  summarized directly; the 600-character floor is what stops that from quietly
-  re-admitting teasers.
-- **Some sources are exempt.** `NWS Florida Alerts` and `NHC Atlantic` publish
-  machine-generated alerts where the exact wording *is* the information.
-  Paraphrasing a flood warning can only lose the county name.
-
-Every entry in the markdown digest carries a `summary:` marker when it *isn't*
-a clean LLM summary — `rss:fetch-error:HTTPStatusError` (Adafruit blocks
-non-browser clients), `rss:thin:0` (a Reddit link post with no body),
-`llm:rss-body`, `exempt`. That's how a source silently going unfetchable
-becomes visible instead of just getting quietly worse.
-
-Two caches, both under `.cache/`: fetched page text (one file per URL) and the
-summaries themselves (keyed by model + prompt version + article text). Tuning
-the prompt therefore doesn't re-fetch, and re-running doesn't re-summarize.
-Bump `PROMPT_VERSION` in `clients/summarizer.py` when you change the instructions.
-
-Model defaults to `gpt-5.4-mini` via the Responses API at low reasoning effort;
-override with `--summary-model` or `ESP_NEWS_SUMMARY_MODEL`. A run costs a
-fraction of a cent and adds ~15 s cold, ~0 s warm.
-
-## Running Phase 6 (serve to the ESP32)
-```bash
-uv run esp-serve                  # binds 0.0.0.0:8000 so the board can reach it
-uv run esp-serve --port 8010      # port 8000 is taken by Docker on this machine
-```
-
-| Endpoint | Purpose |
+| Document | What's in it |
 |---|---|
-| `GET /digest.json` | the firmware contract; `?limit=` and `?max_summary=` |
-| `GET /digest.md` | today's markdown (falls back to the most recent) |
-| `GET /health` | freshness, age in hours, refresh status, last error |
-| `POST /refresh` | runs the pipeline in the background, returns `202` immediately |
-| `GET /feedback` | every current like/dislike, for rendering state |
-| `POST /feedback` | record a verdict, or clear one |
-| `DELETE /feedback` | clear a verdict — the same operation as `POST … "clear"` |
-
-The feedback endpoints have their own contract in
-[`docs/feedback-api.md`](docs/feedback-api.md), written for client authors.
-
-The server reads the last written digest instead of running the pipeline per
-request. A full run takes ~20–30 s and the firmware's HTTP client times out at
-8 s, so an on-request pipeline would guarantee the device never got a response.
-`/digest.json` answers in under 10 ms.
-
-`latest.json` is written via a temp file and atomic rename, so a poll landing
-mid-write can't read a truncated payload.
-
-Defaults (`limit=12`, `max_summary=900`) match the firmware's fixed buffers in
-`news_client.h` (`NEWS_SUMMARY_LEN 960`), so the device never parses payload it
-would only discard. Both were raised from 400/420 in Phase 9 — an LLM summary
-trimmed back to 400 characters is a teaser again, which is the whole thing that
-phase set out to stop.
-
-### Pointing the firmware at it
-In `news_client.h` (now in `~/Desktop/ESP32/NewsReporter/src/`):
-
-```c
-#define NEWS_BASE_URL "http://192.168.1.171:8010"
-```
-
-That's this Mac's current LAN address — it can change on DHCP renewal, so a
-reserved address or an `.local` hostname is worth setting up if the display is
-meant to keep working unattended.
-
-## When the feeds actually update
-
-Fetching RSS only happens when the pipeline runs. Nothing polls on its own, so
-there are exactly three ways new stories appear:
-
-| Trigger | What runs |
-|---|---|
-| `uv run esp-digest` | the full graph, by hand |
-| launchd, daily at 08:00 | the same command (see below) |
-| BOOT button on the device | `POST /refresh`, which runs the graph in-process |
-
-`feeds.yaml`'s `lookback_hours: 48` is a filter on each fetch, not a schedule —
-it decides how far back a run looks, not how often runs happen. Likewise
-`NEWS_REFRESH_INTERVAL_MS` (15 min) in the firmware only re-reads the digest the
-backend has already written.
-
-### The 08:00 launchd job
-
-`~/Library/LaunchAgents/com.willtobin.esp-news-digest.plist` runs
-`uv run esp-digest` in this directory every morning at 08:00.
-
-```bash
-launchctl print gui/$UID/com.willtobin.esp-news-digest   # state, run count, last exit
-launchctl kickstart -p gui/$UID/com.willtobin.esp-news-digest   # run it now
-launchctl bootout gui/$UID/com.willtobin.esp-news-digest        # disable
-launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.willtobin.esp-news-digest.plist
-```
-
-Logs: `~/Library/Logs/esp-news-digest.log` (the digest itself, on stdout) and
-`.err` (progress lines — Python's logging writes to stderr, so **content in
-`.err` is normal, not a failure**; check the exit code instead).
-
-Two things the plist depends on: `WorkingDirectory` must stay pointed at this
-repo, because both uv's project resolution and `load_dotenv()`'s search for
-`.env` start from the working directory; and `uv` is invoked by absolute path
-(`/opt/homebrew/bin/uv`) because launchd jobs get no login shell and Homebrew is
-not on their `PATH`. `RunAtLoad` is deliberately false, so loading the agent or
-rebooting doesn't fire an extra run. If the Mac is asleep at 08:00, launchd runs
-the job when it next wakes.
-
-## The device (retired)
-The ESP32 build (172×640 touch panel, fetched `/digest.json`, read stories
-aloud via `/audio/{i}.pcm`) is retired as of 2026-08-12. It's no longer part
-of this repo — moved out to `~/Desktop/ESP32/NewsReporter/`, alongside the
-other hardware projects, in case it's ever revisited. Start there with
-`CLAUDE.md` and `HARDWARE.md` in that folder. The `firmware-final` git tag
-here still has the last commit that carried it, if you need this repo's view
-of that history.
-
-`/digest.json` and `/audio/{i}.pcm` remain live endpoints below — nothing
-polls them today, but the contract hasn't changed.
-
-## Tracing (LangSmith)
-Set in `.env`:
-```
-LANGSMITH_TRACING=true
-LANGSMITH_API_KEY=lsv2_...
-LANGSMITH_PROJECT=esp-news-reporter
-```
-When unset, tracing is a no-op and the pipeline runs identically.
+| [docs/pipeline.md](docs/pipeline.md) | the full engineering write-up of the backend — every phase, and why each decision went the way it did |
+| [desktop/README.md](desktop/README.md) | the widget: the deck animation, the macOS window-level traps, the colour sampling |
+| [docs/feedback-api.md](docs/feedback-api.md) | the thumbs up/down API, written for client authors |
+| [interests.yaml](interests.yaml) | the interest profile itself — the file that decides what shows up |
+| [topics.yaml](topics.yaml) | the 78 learning topics and their grading checklists |

@@ -7,8 +7,8 @@ open the one you want for the full summary and narration.
 This is a **front end, not a second pipeline.** It talks to the FastAPI app in
 `src/esp_news/api.py` over the exact contract the firmware uses and knows
 nothing about RSS, scoring or LangGraph. Everything in
-[the main README](../README.md) about when the feeds actually update applies
-here unchanged.
+[the pipeline write-up](../docs/pipeline.md) about when the feeds actually
+update applies here unchanged.
 
 ```
 ┌──────────────────────────────┐
