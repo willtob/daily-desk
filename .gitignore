@@ -26,6 +26,18 @@ learn.db
 learn.db-wal
 learn.db-shm
 
+# The retired ESP32 firmware. The tracked files are gone (see the
+# firmware-final tag), but ~85 MB of PlatformIO and simulator build output is
+# still sitting on disk, along with firmware/src/wifi_credentials.h, which holds
+# a real Wi-Fi password.
+#
+# That file used to be ignored by firmware/.gitignore — which was itself tracked
+# and therefore deleted along with everything else, un-ignoring all of it at
+# once. A `git add -A` immediately afterwards staged 1389 build artifacts and
+# the credentials. This line is what stops that recurring for as long as the
+# directory remains on disk.
+firmware/
+
 # macOS
 .DS_Store
 

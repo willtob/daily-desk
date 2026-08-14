@@ -123,8 +123,8 @@ enum Paragraphs {
 
     /// Insert blank lines into a summary that arrived as one block.
     ///
-    /// Ported from `paragraphize()` in firmware/src/news_ui.cpp; the two are
-    /// meant to agree, so the same story reads the same on both screens.
+    /// Ported from `paragraphize()` on the ESP32 panel (see the firmware-final
+    /// tag), which is where the rule was worked out. This is the only copy now.
     ///
     /// The rule is conservative, because a missed break costs nothing and a
     /// break in the middle of a name is glaring: split only on a stop followed

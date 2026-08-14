@@ -1,10 +1,10 @@
 //
 //  Snapshot.swift — render the widget to a PNG without running it.
 //
-//  Same reasoning as firmware/sim: looking at the UI should cost seconds, not
-//  a launch-and-squint cycle, and a rendered file can be diffed and attached
-//  to a commit. ImageRenderer draws the real views at the real panel size, so
-//  what lands in the PNG is what the widget shows.
+//  Same reasoning as the old firmware simulator: looking at the UI should cost
+//  seconds, not a launch-and-squint cycle, and a rendered file can be diffed
+//  and attached to a commit. ImageRenderer draws the real views at the real
+//  panel size, so what lands in the PNG is what the widget shows.
 //
 //      swift run ESPNewsWidget --snapshot out/            both views
 //      swift run ESPNewsWidget --snapshot out/ --offline  use the fixture
@@ -386,7 +386,7 @@ enum Snapshot {
         ),
         // Last, and deliberately carrying an area that is already in the deck:
         // the badge has to come from the wildcard flag, not from the area being
-        // unrecognised. Same case the firmware simulator covers.
+        // unrecognised.
         Article(
             title: "A 1970s synthesiser restored with a logic analyser and a lot of patience",
             summary: "The exploration slot: drawn at random from the middle of the ranking on purpose, so the digest carries one thing the profile did not ask for.",

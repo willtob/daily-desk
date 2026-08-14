@@ -1,12 +1,19 @@
-# ESP News Reporter
+# daily-desk
 
 Personalized tech news digest. A LangGraph pipeline that pulls articles from RSS
 feeds, scores them against a personal interest profile using embedding similarity
-(the "fitness function"), and renders a curated markdown digest.
+(the "fitness function"), and renders a curated markdown digest. The front end is
+a macOS desk widget in [desktop/](desktop), which also carries a fifteen-minute
+learning tab.
 
-Runs on demand from the CLI, every morning at 08:00 via launchd, or on a button
-press from the device — see [When the feeds actually update](#when-the-feeds-actually-update).
+Runs on demand from the CLI, every morning at 08:00 via launchd, or from the
+widget — see [When the feeds actually update](#when-the-feeds-actually-update).
 [esp-news-plan.md](esp-news-plan.md) has the full build plan.
+
+The package, the CLI commands and the Swift target all still carry the `esp-`
+prefix from when this drove an ESP32 panel. That's cosmetic and deliberately
+left alone: renaming the app bundle id would strand the copy already installed
+in `/Applications`. See [The device](#the-device-retired) for where that went.
 
 ## Status
 - [x] Phase 0 — repo & environment setup
@@ -15,7 +22,7 @@ press from the device — see [When the feeds actually update](#when-the-feeds-a
 - [x] Phase 3 — score (fitness function)
 - [x] Phase 4 — curate
 - [x] Phase 5 — digest output (v1 complete)
-- [x] Phase 6 — FastAPI endpoint serving the digest to the ESP32
+- [x] Phase 6 — FastAPI endpoint serving the digest over HTTP
 - [x] Phase 9 — fetch the real article and write a proper summary with an LLM
 
 ## Setup
@@ -166,15 +173,15 @@ Model defaults to `gpt-5.4-mini` via the Responses API at low reasoning effort;
 override with `--summary-model` or `ESP_NEWS_SUMMARY_MODEL`. A run costs a
 fraction of a cent and adds ~15 s cold, ~0 s warm.
 
-## Running Phase 6 (serve to the ESP32)
+## Running Phase 6 (serve the digest)
 ```bash
-uv run esp-serve                  # binds 0.0.0.0:8000 so the board can reach it
+uv run esp-serve                  # binds 0.0.0.0:8000, reachable from the LAN
 uv run esp-serve --port 8010      # port 8000 is taken by Docker on this machine
 ```
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /digest.json` | the firmware contract; `?limit=` and `?max_summary=` |
+| `GET /digest.json` | the client contract; `?limit=` and `?max_summary=` |
 | `GET /digest.md` | today's markdown (falls back to the most recent) |
 | `GET /health` | freshness, age in hours, refresh status, last error |
 | `POST /refresh` | runs the pipeline in the background, returns `202` immediately |
@@ -186,29 +193,20 @@ The feedback endpoints have their own contract in
 [`docs/feedback-api.md`](docs/feedback-api.md), written for client authors.
 
 The server reads the last written digest instead of running the pipeline per
-request. A full run takes ~20–30 s and the firmware's HTTP client times out at
-8 s, so an on-request pipeline would guarantee the device never got a response.
-`/digest.json` answers in under 10 ms.
+request. A full run takes ~20–30 s and the clients time out at 8 s, so an
+on-request pipeline would guarantee nothing ever got a response. `/digest.json`
+answers in under 10 ms. That 8 s is still what `HTTPTransport.timeout` uses in
+the widget; grading is the one call that passes its own, at 90 s.
 
 `latest.json` is written via a temp file and atomic rename, so a poll landing
 mid-write can't read a truncated payload.
 
-Defaults (`limit=12`, `max_summary=900`) match the firmware's fixed buffers in
-`news_client.h` (`NEWS_SUMMARY_LEN 960`), so the device never parses payload it
-would only discard. Both were raised from 400/420 in Phase 9 — an LLM summary
-trimmed back to 400 characters is a teaser again, which is the whole thing that
-phase set out to stop.
-
-### Pointing the firmware at it
-In `firmware/src/news_client.h`:
-
-```c
-#define NEWS_BASE_URL "http://192.168.1.171:8010"
-```
-
-That's this Mac's current LAN address — it can change on DHCP renewal, so a
-reserved address or an `.local` hostname is worth setting up if the display is
-meant to keep working unattended.
+Defaults (`limit=12`, `max_summary=900`) were sized to the ESP32's fixed buffers
+(`NEWS_SUMMARY_LEN 960`), so the panel never parsed payload it would only
+discard. The panel is gone but the numbers are kept: they were raised from
+400/420 in Phase 9 because an LLM summary trimmed back to 400 characters is a
+teaser again, which is the whole thing that phase set out to stop. Nothing now
+imposes a ceiling, so raise them if the widget wants more.
 
 ## When the feeds actually update
 
@@ -219,12 +217,11 @@ there are exactly three ways new stories appear:
 |---|---|
 | `uv run esp-digest` | the full graph, by hand |
 | launchd, daily at 08:00 | the same command (see below) |
-| BOOT button on the device | `POST /refresh`, which runs the graph in-process |
+| refresh from the widget | `POST /refresh`, which runs the graph in-process |
 
 `feeds.yaml`'s `lookback_hours: 48` is a filter on each fetch, not a schedule —
-it decides how far back a run looks, not how often runs happen. Likewise
-`NEWS_REFRESH_INTERVAL_MS` (15 min) in the firmware only re-reads the digest the
-backend has already written.
+it decides how far back a run looks, not how often runs happen. Likewise the
+widget's own poll only re-reads the digest the backend has already written.
 
 ### The 08:00 launchd job
 
@@ -250,21 +247,34 @@ not on their `PATH`. `RunAtLoad` is deliberately false, so loading the agent or
 rebooting doesn't fire an extra run. If the Mac is asleep at 08:00, launchd runs
 the job when it next wakes.
 
-## The device (Phases 7–8)
-The ESP32 firmware lives in [firmware/](firmware) — same repo, since it's the
-same project. It fetches `/digest.json`, shows the curated stories on a
-172×640 touch panel, and reads them aloud via `/audio/{i}.pcm`.
+## The device (retired)
 
-Start there with [firmware/CLAUDE.md](firmware/CLAUDE.md); board notes are in
-[docs/HARDWARE.md](docs/HARDWARE.md).
+Phases 7–8 built ESP32 firmware for a 172×640 touch panel: it fetched
+`/digest.json`, showed the curated stories, and read them aloud via
+`/audio/{i}.pcm`. That's over — the front end is the macOS widget now — and
+`firmware/` plus `docs/HARDWARE.md` were removed from the tree.
 
-**For UI work, use the desktop simulator** (`firmware/sim/`) rather than
-flashing — it builds the real UI source on the host and can be screenshotted,
-which turns a ~23 s flash-and-squint cycle into ~2 s.
+Nothing was lost. The **`firmware-final`** tag is the last commit that carries
+them:
 
-LVGL is not vendored here; it stays with the Waveshare checkout on the Desktop
-and is referenced by absolute path from `firmware/platformio.ini` and
-`firmware/sim/Makefile`.
+```bash
+git show firmware-final --stat                              # what was there
+git checkout firmware-final -- firmware docs/HARDWARE.md    # bring it back
+```
+
+Two pieces of it are still live and must not be treated as dead weight:
+
+- **`/audio/{i}.pcm` and `src/esp_news/tts.py`** exist in the shape they do
+  because the ESP32 wrote bytes straight to I2S with no decoder. The widget's
+  `AudioPlayer.swift` reads that same raw-PCM contract, so narration breaks if
+  they go.
+- **The colour palette and the paragraph splitter** were worked out in
+  `news_ui.cpp` and ported. `Theme.swift` and `Paragraphs.swift` are now the
+  source of truth for both; see `firmware-final` for where they came from.
+
+LVGL was never vendored here — it stayed with the Waveshare checkout on the
+Desktop and was referenced by absolute path, so the tagged tree does not build
+on its own.
 
 ## Tracing (LangSmith)
 Set in `.env`:
