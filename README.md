@@ -139,7 +139,7 @@ A few decisions worth knowing about, since they're the interesting part:
 - **The widget is a front end and nothing more.** It knows about a URL and
   some JSON; it knows nothing about feeds, scoring or AI. That's why the same
   backend drove a microcontroller and a Mac app without changes.
-- **215 tests**, covering the ranking, the caching, the feedback maths, the
+- **214 tests**, covering the ranking, the caching, the feedback maths, the
   API contracts and the widget's layout.
 
 Roughly 9,000 lines of Python and 5,500 of Swift.
