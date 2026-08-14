@@ -54,7 +54,14 @@ final class LearnStore: ObservableObject {
 
     /// Bound straight into the TextEditor, so it is the one piece of state the
     /// view owns rather than the store. Not private(set) for that reason.
-    @Published var explanation = ""
+    ///
+    /// Every keystroke here also lands in UserDefaults — see `saveDraft()`.
+    /// This is the only state in the app worth surviving a crash for: the
+    /// digest re-fetches, the streak re-fetches, but fifteen minutes of
+    /// typing does not exist anywhere else.
+    @Published var explanation = "" {
+        didSet { saveDraft() }
+    }
 
     @Published private(set) var busy = false
     @Published private(set) var lastError: String?
@@ -80,8 +87,15 @@ final class LearnStore: ObservableObject {
     private var deadline: Date?
     private var tickTask: Task<Void, Never>?
 
-    init(baseURL: URL) {
+    /// False only for `posed()`. A snapshot store must neither overwrite a
+    /// real in-progress draft with its fixture text nor load one into a
+    /// picture that is supposed to be reproducible.
+    private let draftPersistenceEnabled: Bool
+
+    init(baseURL: URL, draftPersistenceEnabled: Bool = true) {
         self.client = LearnClient(baseURL: baseURL)
+        self.draftPersistenceEnabled = draftPersistenceEnabled
+        if draftPersistenceEnabled { restoreDraft() }
     }
 
     func setBaseURL(_ url: URL) {
@@ -177,6 +191,7 @@ final class LearnStore: ObservableObject {
         grade = nil
         lastError = nil
         phase = .topic
+        clearDraft()
     }
 
     /// DONE, or the clock reaching zero. Both land in the same place.
@@ -204,6 +219,7 @@ final class LearnStore: ObservableObject {
             grade = try await client.grade(sessionID: session.sessionID,
                                            explanation: explanation)
             phase = .result
+            clearDraft()
             // The streak has just changed; fetch it so opening STATS is instant
             // rather than showing the previous numbers for a beat.
             await loadStats()
@@ -227,6 +243,7 @@ final class LearnStore: ObservableObject {
         grade = nil
         topic = nil
         phase = .topic
+        clearDraft()
         await drawTopic()
     }
 
@@ -269,7 +286,8 @@ final class LearnStore: ObservableObject {
         stats: LearnStats? = nil,
         error: String? = nil
     ) -> LearnStore {
-        let store = LearnStore(baseURL: URL(string: "http://127.0.0.1:8010")!)
+        let store = LearnStore(baseURL: URL(string: "http://127.0.0.1:8010")!,
+                                draftPersistenceEnabled: false)
         store.phase = phase
         store.topic = topic
         store.remaining = remaining
@@ -279,6 +297,54 @@ final class LearnStore: ObservableObject {
         store.stats = stats
         store.lastError = error
         return store
+    }
+
+    // MARK: - Crash recovery
+    //
+    // The watchdog LaunchAgent (see desktop/Makefile) restarts this app
+    // within seconds of any crash or kill. A fresh process means a fresh
+    // LearnStore, so without this, that restart is exactly as destructive to
+    // fifteen minutes of typing as the crash was. UserDefaults survives the
+    // process dying — it's written through to disk continuously, not only on
+    // a clean quit — which is the property that matters here.
+    //
+    // Deliberately narrow: only explanation, topic and session are saved.
+    // Not the countdown — by the time there's anything in `explanation` the
+    // timer has already finished (see `finishEarly`), so there is never a
+    // live deadline to restore alongside it.
+
+    private struct Draft: Codable {
+        let topic: LearnTopic
+        let session: LearnSession
+        let explanation: String
+    }
+
+    private static let draftKey = "learnDraft"
+
+    private func saveDraft() {
+        guard draftPersistenceEnabled, let topic, let session else { return }
+        let draft = Draft(topic: topic, session: session, explanation: explanation)
+        guard let data = try? JSONEncoder().encode(draft) else { return }
+        UserDefaults.standard.set(data, forKey: Self.draftKey)
+    }
+
+    private func restoreDraft() {
+        guard let data = UserDefaults.standard.data(forKey: Self.draftKey),
+              let draft = try? JSONDecoder().decode(Draft.self, from: data)
+        else { return }
+        topic = draft.topic
+        session = draft.session
+        explanation = draft.explanation
+        // Not .grading: if the crash landed mid-submit, whether the backend
+        // ever saw that call is unknown. Landing in .explaining puts Submit
+        // back in front of the user rather than silently retrying — at worst
+        // a 409 from the guard `record_grade` already has, at best the text
+        // that was about to be lost is one button press from being graded.
+        phase = .explaining
+    }
+
+    private func clearDraft() {
+        UserDefaults.standard.removeObject(forKey: Self.draftKey)
     }
 
     // MARK: - Ticking

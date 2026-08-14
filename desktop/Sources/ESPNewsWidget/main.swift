@@ -107,6 +107,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let autosave    = "ESPNewsDeck"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // The watchdog LaunchAgent (desktop/Makefile) can relaunch this app
+        // within seconds of it dying — and a person who notices it missing
+        // and reopens it from Spotlight or the Dock has no way to know that
+        // already happened. Whichever copy loses this race just activates
+        // the one that's already there and quits, rather than drawing a
+        // second window on top of it.
+        if let bundleID = Bundle.main.bundleIdentifier {
+            let others = NSRunningApplication
+                .runningApplications(withBundleIdentifier: bundleID)
+                .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
+            if let existing = others.first {
+                existing.activate()
+                NSApp.terminate(nil)
+                return
+            }
+        }
+
         NSApp.setActivationPolicy(.accessory)
         buildMenu()
         buildStatusItem()

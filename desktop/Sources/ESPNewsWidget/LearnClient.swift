@@ -21,7 +21,10 @@ import Foundation
 // MARK: - Wire types
 
 /// A drawn topic. Three fields, and there is no fourth — see above.
-struct LearnTopic: Decodable, Equatable {
+///
+/// Codable, not just Decodable: LearnStore persists a crash-recovery draft
+/// with one of these in it, so it has to round-trip, not just arrive.
+struct LearnTopic: Codable, Equatable {
     let topicID: String
     let name: String
     let difficulty: String
@@ -32,7 +35,8 @@ struct LearnTopic: Decodable, Equatable {
     }
 }
 
-struct LearnSession: Decodable, Equatable {
+/// Codable for the same reason LearnTopic is — see there.
+struct LearnSession: Codable, Equatable {
     let sessionID: String
     let topicID: String
 
