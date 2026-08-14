@@ -19,12 +19,26 @@
 # Package Manager builds this, and assembling the .app by hand is a dozen
 # lines. A WidgetKit widget would be the thing that forces a full Xcode
 # install — see README.md.
+#
+# The /Applications copy is supervised by a LaunchAgent now
+# (~/Library/LaunchAgents/com.willtobin.esp-news-widget.plist), which
+# restarts it within a few seconds of any kill or crash — not just at login,
+# the way a plain login item does. `reload` asks launchd to do its own
+# kill-and-relaunch (`kickstart -k`) rather than pkill+open, so the two never
+# race and double-launch. `run` and `dev` build a *different* copy (build/,
+# or no bundle at all) but still share the ESPNewsWidget process name, so a
+# pkill from either one also takes down the supervised copy — which is fine,
+# it comes back on its own within ThrottleInterval. To test without that
+# happening mid-session: `launchctl bootout gui/$$(id -u)/com.willtobin.esp-news-widget`
+# first, then `launchctl bootstrap gui/$$(id -u) ~/Library/LaunchAgents/com.willtobin.esp-news-widget.plist`
+# when done.
 
 APP_NAME  := ESP News
 BIN       := ESPNewsWidget
 BUILD_DIR := build
 APP       := $(BUILD_DIR)/$(APP_NAME).app
 CONFIG    := release
+WIDGET_JOB := com.willtobin.esp-news-widget
 
 .PHONY: all run dev install reload clean
 
@@ -56,8 +70,10 @@ install: $(APP)
 	@echo "installed /Applications/$(APP_NAME).app"
 
 reload: install
-	-pkill -x $(BIN) 2>/dev/null; sleep 1
-	open "/Applications/$(APP_NAME).app"
+	# launchd owns this process now — asking it to kill-and-relaunch its own
+	# job, instead of pkill+open, is what keeps this from racing the
+	# watchdog's own KeepAlive restart into a second copy. See the note above.
+	launchctl kickstart -k gui/$(shell id -u)/$(WIDGET_JOB)
 
 clean:
 	swift package clean
