@@ -110,17 +110,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // The watchdog LaunchAgent (desktop/Makefile) can relaunch this app
         // within seconds of it dying — and a person who notices it missing
         // and reopens it from Spotlight or the Dock has no way to know that
-        // already happened. Whichever copy loses this race just activates
-        // the one that's already there and quits, rather than drawing a
-        // second window on top of it.
+        // already happened. Two copies must never coexist, but the two
+        // outcomes are not symmetric: the supervised copy is the only one
+        // launchd's KeepAlive is watching, so it must always be the
+        // survivor, or a clean exit here (NSApplication.terminate -> status
+        // 0) reads as "quit on purpose" and KeepAlive stops trying — which
+        // is exactly how a manual reopen can permanently strand the app on
+        // an unsupervised copy that nothing brings back next time it dies.
+        // getppid() can't tell the two apart (a reparented ad-hoc launch
+        // shows the same PPID=1/launchd a real LaunchAgent child does), so
+        // the LaunchAgent plist sets ESP_NEWS_WIDGET_SUPERVISED instead.
+        let isSupervised = ProcessInfo.processInfo.environment["ESP_NEWS_WIDGET_SUPERVISED"] == "1"
         if let bundleID = Bundle.main.bundleIdentifier {
             let others = NSRunningApplication
                 .runningApplications(withBundleIdentifier: bundleID)
                 .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
             if let existing = others.first {
-                existing.activate()
-                NSApp.terminate(nil)
-                return
+                if isSupervised {
+                    existing.forceTerminate()
+                } else {
+                    existing.activate()
+                    NSApp.terminate(nil)
+                    return
+                }
             }
         }
 
