@@ -11,11 +11,15 @@ that gets graded.**
     <td width="33%"><img src="docs/images/learn-result.png" alt="The learning tab's result screen, scoring an explanation 6 out of 10 with what was missed" width="100%"></td>
   </tr>
   <tr>
-    <td align="center"><em>Flip through the day</em></td>
-    <td align="center"><em>Open one and read it</em></td>
-    <td align="center"><em>Or get graded on what you know</em></td>
+    <td align="center"><sub><b>Flip through the day</b><br>ten stories, one card at a time</sub></td>
+    <td align="center"><sub><b>Open one and read it</b><br>summary, or have it read aloud</sub></td>
+    <td align="center"><sub><b>Get graded on what you know</b><br>fifteen minutes, then explain it</sub></td>
   </tr>
 </table>
+
+<sub>Real screenshots, rendered straight from the app by its own snapshot mode —
+`swift run ESPNewsWidget --snapshot out/ --offline` — so they regenerate
+instead of going stale.</sub>
 
 ## What it is, in plain English
 
@@ -78,13 +82,19 @@ All thirteen subjects score every article from 0 to 1. The article keeps its
                              └── keeps 0.65, filed under WORLD
 ```
 
+<img src="docs/images/world-card.png" alt="A news card tinted sand, badged WORLD, scoring 0.65, headlined 'South Korea proposes talks to officially end the war with the North'" width="270" align="right">
+
 Averaged across all thirteen, this story scores 0.14 and never sees daylight.
 Taking the best is how a front page actually works: nobody rejects a great
 hardware post for having nothing to say about Barcelona.
 
-Every card carries that winning line — subject, score, runner-up — which is
-what makes the profile debuggable. When a bad story shows up I can see which
-subject let it in and go fix that paragraph.
+On the right is that same story as it actually landed on the desk. The
+badge is the subject that won it and the number is the score — the ranking
+isn't hidden behind the design, it's printed on the card.
+
+That's what makes the profile debuggable. When a story shows up that
+shouldn't have, I can see which subject let it in and go fix that paragraph,
+rather than guessing at a model.
 
 ### Each subject has a volume knob
 
@@ -153,21 +163,37 @@ neither.
 
 ## The other half: fifteen minutes of learning
 
-<img src="docs/images/learn-timer.png" alt="The learning tab mid-session: a topic name, a countdown at 9:12, and the widget's own border draining as the timer runs" width="280" align="right">
+The second tab is a study habit rather than a reader.
 
-The second tab is a study habit rather than a reader. It picks one of 78
-machine-learning topics at random, starts a fifteen-minute timer, and then
-asks me to explain that topic from memory in my own words. An AI grades the
-explanation against a checklist of what a good answer contains — a checklist
-I never get to see beforehand, because if I could read it the exercise would
-be reading rather than recall. It comes back with a score, the specific
-things I missed, and the things I got right. Streaks and a rolling average
-are kept.
+<table>
+  <tr>
+    <td width="33%"><img src="docs/images/learn-topic.png" alt="The learning tab showing a drawn topic, 'The KV cache', tagged ADVANCED, with a Start 15 minutes button" width="100%"></td>
+    <td width="33%"><img src="docs/images/learn-timer.png" alt="Mid-session: the topic name, a countdown reading 9:12, and the widget's own border draining from the top as the timer runs" width="100%"></td>
+    <td width="33%"><img src="docs/images/learn-stats.png" alt="The stats screen: a current streak of 4, longest 9, 23 sessions, 7.4 average over the last ten and 6.8 all time" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>1. Draw a topic</b><br>one of 78, at random</sub></td>
+    <td align="center"><sub><b>2. Fifteen minutes</b><br>then explain it from memory</sub></td>
+    <td align="center"><sub><b>3. Keep the streak</b><br>graded, tracked, averaged</sub></td>
+  </tr>
+</table>
 
-The countdown is the widget's own border, draining from the top as the
-fifteen minutes run down, the way the iPhone's Dynamic Island does it. On a
-window this small, a timer that costs no space is the difference between the
-countdown being readable and being an afterthought.
+It picks one of 78 machine-learning topics at random, starts a fifteen-minute
+timer, and then asks me to explain that topic from memory in my own words. An
+AI grades the explanation against a checklist of what a good answer contains
+— a checklist I never get to see beforehand, because if I could read it the
+exercise would be reading rather than recall. It comes back with a score, the
+specific things I missed, and the things I got right.
+
+The reason it works this way: reading about something feels like learning and
+mostly isn't. Explaining it without the page in front of you is the part that
+tells you whether you actually know it.
+
+**The countdown is the widget's own border** — look at the middle screenshot
+— draining from the top as the fifteen minutes run down, the way the iPhone's
+Dynamic Island does it. On a window this small, a timer that costs no
+vertical space is the difference between the countdown being readable and
+being an afterthought.
 
 ## Where it started: a thing on my desk
 
