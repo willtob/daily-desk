@@ -33,37 +33,123 @@ That's the whole thing. No app to launch, no feed to scroll, no
 notifications. It just sits on the desktop behind my windows, like a sticky
 note that keeps itself up to date.
 
-## How it decides what's worth reading
+## How it picks the ten
 
-I wrote down what I'm interested in — thirteen subjects, in ordinary English
-sentences. Things like *what's actually happening in the world today*,
-*startups raising money in Europe*, or *what's on in Barcelona this weekend*.
-That file is the whole configuration; there is no algorithm learning about me
-in the background that I can't see or edit.
+This is the part of the project I care most about, so it gets the most room.
+Roughly 500 articles come in every morning and ten go on the desk. Here is
+the whole of how that happens.
 
-Every new article gets compared against those descriptions and scored from 0
-to 1. The comparison is done by **meaning, not keywords** — an article about
-"on-device inference" matches "AI running on small hardware" without either
-phrase appearing in the other. Only the best ten make the cut, and each one
-arrives with a note saying which subject it matched and how strongly, so when
-something wrong shows up I can see why and fix the description.
+### The profile is a file I wrote, not a model that watched me
 
-Three deliberate rules keep it from getting boring:
+Thirteen subjects, each one a short paragraph of ordinary English plus a
+handful of example headlines. *What's actually happening in the world today.
+Startups raising money in Europe. What's on in Barcelona this weekend.*
 
-- **No subject can take over the page.** Barcelona's newspapers publish far
-  more than the engineering blogs do, so a straight top-ten would be local
-  news every day. Any one subject is capped, and the empty slots get filled
-  by the next best stories.
-- **One story a day is chosen on purpose to be off-profile.** A system that
-  only shows you things matching what you already like can never show you
-  something new. So one card every day — marked **WILDCARD** — is picked at
-  random from the middle of the pile: related to my interests, but not
-  something the profile would ever have chosen.
-- **It remembers what I actually liked.** A thumbs up or down on any story is
-  kept and fed back into the scoring, so the written profile handles what I
-  *say* I want and the record of my choices handles what I *actually* read.
+That file **is** the algorithm's opinion of me. I can open it, disagree with
+it, and change a line. Nothing is learned about me in the background that I
+can't read, and there is no engagement signal anywhere in the system — it
+doesn't know or care what I clicked on, only what I told it and what I
+explicitly thumbed.
 
-Stories I've already been shown don't come back for 45 days.
+### Matching is by meaning, not by keywords
+
+Every article and every line of the profile is turned into a point in space,
+positioned so that things which *mean* similar things land near each other.
+Scoring is just measuring how close two points are.
+
+This is why an article about "on-device inference" matches a profile line
+about "AI running on small hardware" — no word appears in both. A keyword
+filter gets this wrong in both directions: it misses the article that says
+the same thing in different words, and it happily matches an article that
+uses your words to say something else entirely.
+
+### An article only has to be good at one thing
+
+All thirteen subjects score every article from 0 to 1. The article keeps its
+**best** score, not its average. From this morning's run:
+
+```
+  "South Korea proposes talks to officially end war with North"   BBC World
+
+     world_politics    0.65  ████████████████████
+     startup_vc        0.17  █████
+     tech_careers      0.15  █████
+     model_architect…  0.12  ████
+                             └── keeps 0.65, filed under WORLD
+```
+
+Averaged across all thirteen, this story scores 0.14 and never sees daylight.
+Taking the best is how a front page actually works: nobody rejects a great
+hardware post for having nothing to say about Barcelona.
+
+Every card carries that winning line — subject, score, runner-up — which is
+what makes the profile debuggable. When a bad story shows up I can see which
+subject let it in and go fix that paragraph.
+
+### Each subject has a volume knob
+
+One number per subject, because subjects don't score on the same scale.
+Measured on the same morning's articles, before any knob is applied: a
+Barcelona listicle matches its description almost word for word and reaches
+**0.72**. The best world news story of the day reaches **0.48** — not because
+it's a worse story, but because a wire headline is specific and unrepeatable
+(*"South Korea proposes talks"*) and so sits further from any general
+description, however well written.
+
+Without correction the world section would simply never appear, not because
+I don't want it but because of how its headlines are shaped. The knob fixes
+that, and it's one number I can turn.
+
+### What a thumbs-up actually does
+
+The part people assume is magic, and isn't.
+
+**A thumbs-up does not mean "more world news."** It means *"more articles
+like this one."* The article's own text is kept and pinned to the subject it
+matched, as a worked example of what good looks like there. From then on,
+new articles are measured against my examples as well as against my
+description. Everything I've liked within one subject blends into a single
+composite example.
+
+Two things keep that from taking over.
+
+**It's throttled, hard.** A like can lift a story by at most 0.05, on a scale
+where making the page takes about 0.6. A nudge — a few places up the ranking,
+never a promotion from nowhere. That sounds too timid to be worth building
+until you see it switched off: in testing, a single thumbs-up on one
+Barcelona street-festival story pulled seven more festival stories onto the
+front page, one of them from as deep as rank 97. One click, and tomorrow's
+paper is all festivals. **That loop — like something, get more of it, like
+that, get more of it — is the thing that makes every recommendation feed
+converge on slop, and the cap is what stands in front of it.**
+
+**It only touches one subject.** A like on a Spanish news story changes
+nothing about how AI articles are ranked. A misfiled thumb costs one subject,
+not the whole profile.
+
+A thumbs-down works the same way in reverse and gets an even shorter lever,
+for a reason worth knowing: a whole disliked article recognises its own kind
+*very* precisely — about 0.94 similarity against its nearest neighbours,
+roughly double what any hand-written phrase manages. It's the sharpest
+instrument in the system, so it's given the smallest handle.
+
+### Three rules that stop it eating itself
+
+- **No subject can take the page.** Barcelona's papers publish far more than
+  the engineering blogs, so a straight top ten would be local news daily. Any
+  one subject is capped at three, and freed slots go to the next best stories.
+- **One story a day is deliberately off-profile.** Marked **WILDCARD**, drawn
+  at random from the middle of the pile — close enough to be relevant, never
+  something the profile would have chosen. It is also completely blind to my
+  likes and dislikes: it draws from the written-profile-only ranking, so the
+  one slot meant to show me something new can't be captured by the feedback
+  loop.
+- **Nothing repeats for 45 days**, tracked by canonical URL so a link with
+  tracking junk on the end still counts as the same story.
+
+Put together: what I *say* I want is a file I can edit, what I *actually*
+thumb nudges it within strict limits, and one slot every day belongs to
+neither.
 
 ## The other half: fifteen minutes of learning
 
