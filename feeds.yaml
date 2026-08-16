@@ -23,14 +23,22 @@ themes:
     - name: CNX Software
       url: https://www.cnx-software.com/feed/
     # The three feeds above are editorial — someone writing up someone else's
-    # build. These two are people posting their own, which is the register half
-    # of `embedded_wearables` ("I have built an amazing project nobody has built
-    # before", "ESP32 project ideas") and the part nothing else here supplies.
-    # Both are busy: ~22 of 25 entries land inside the 48h window.
-    - name: r/esp32
-      url: https://www.reddit.com/r/esp32/.rss
+    # build. This one is people posting their own, which is the register half of
+    # `embedded_wearables` ("I have built an amazing project nobody has built
+    # before") and the part nothing else here supplies. Busy: ~22 of 25 entries
+    # land inside the 48h window.
     - name: r/embedded
       url: https://www.reddit.com/r/embedded/.rss
+    #
+    # Removed: r/esp32 (https://www.reddit.com/r/esp32/.rss). Not for being
+    # quiet — it was the busiest feed in this theme and won 10 slots across 17
+    # digests, more than the three editorial feeds put together. That is exactly
+    # why it went: the ask was less ESP32 specifically, and one feed supplying
+    # more than half of this theme's picks is the cheapest place to get it. The
+    # ESP32 panel this repo was named for is retired, so the standing reason to
+    # track that chip daily went with it. r/embedded stays and is broader — the
+    # first-person build register survives, the board-specific firehose does not.
+    # Restore it if a hardware project starts up again.
 
   big_tech:
     - name: The Verge
@@ -56,6 +64,41 @@ themes:
     - name: Lenny's Newsletter
       url: https://www.lennysnewsletter.com/feed
 
+  # What is actually happening in the world, as a daily habit rather than a tech
+  # sidebar. New theme, for the new `world_politics` area — until now the only
+  # non-tech news here was local (`florida`, `spain`), so a digest could tell me
+  # what opened in Gràcia and nothing about the country it is in.
+  #
+  # Six feeds, chosen to disagree with each other: two wires with global desks
+  # (BBC, Al Jazeera), two papers of record on US politics and world (NYT), one
+  # quality daily (Guardian), one that reads politics through markets (FT).
+  # Volume is the point and also the risk — between them they put ~150 articles
+  # into a run, roughly a third of the corpus, so the per-area cap is what keeps
+  # a busy news day from taking the whole page.
+  world_politics:
+    - name: BBC World
+      url: https://feeds.bbci.co.uk/news/world/rss.xml
+    - name: Guardian World
+      url: https://www.theguardian.com/world/rss
+    # Non-Western desk on the same stories. Worth the slot precisely because it
+    # frames a conflict differently from the two above, and the profile scores
+    # on meaning — three feeds agreeing would just be one feed with more weight.
+    - name: Al Jazeera
+      url: https://www.aljazeera.com/xml/rss/all.xml
+    # US politics specifically, which is the half of "politics" that the world
+    # desks above cover only when it spills over the border.
+    - name: NYT Politics
+      url: https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml
+    - name: NPR News
+      url: https://feeds.npr.org/1001/rss.xml
+    # Geopolitics read through markets and trade — the register that overlaps
+    # `startup_vc` and `tech_careers`, so it can win on those too.
+    - name: FT World
+      url: "https://www.ft.com/world?format=rss"
+
+  # Weighted up in interests.yaml, and pooled deeper here: three feeds was the
+  # thinnest supply of any area asked for by name, and two of the three (Hacker
+  # News, VentureBeat) are only incidentally about startups.
   startup_vc:
     - name: VentureBeat
       url: https://venturebeat.com/feed/
@@ -63,6 +106,22 @@ themes:
       url: https://news.crunchbase.com/feed/
     - name: Hacker News Front Page
       url: https://hnrss.org/frontpage
+    # TechCrunch's startup desk rather than its front page, which is already
+    # here under `big_tech` and leads with the name-brand companies the profile
+    # explicitly says it is not here for.
+    - name: TechCrunch Startups
+      url: https://techcrunch.com/category/startups/feed/
+    # The three below are European, which is deliberate: "Barcelona's startup
+    # ecosystem is the part I can actually walk into" is in the interest area
+    # verbatim, and no US feed will ever cover a Barcelona seed round. Sifted
+    # and Tech.eu are the continent's funding beat; EU-Startups is closest to
+    # the ground and reliably names cities.
+    - name: Sifted
+      url: https://sifted.eu/feed
+    - name: Tech.eu
+      url: https://tech.eu/feed/
+    - name: EU-Startups
+      url: https://www.eu-startups.com/feed/
 
   # AI ecosystem, weighted toward open source / open weight releases.
   ai:
@@ -103,8 +162,13 @@ themes:
     # posts ~340 papers a day and would swamp everything else in the digest.
     - name: arXiv Interpretability
       url: "http://export.arxiv.org/api/query?search_query=all:%22mechanistic+interpretability%22&sortBy=submittedDate&sortOrder=descending&max_results=25"
-    - name: arXiv Consciousness
-      url: "http://export.arxiv.org/api/query?search_query=all:%22AI+consciousness%22+OR+all:%22model+welfare%22&sortBy=submittedDate&sortOrder=descending&max_results=25"
+    # Removed: arXiv Consciousness (all:"AI consciousness" OR all:"model
+    # welfare"). The one feed here that failed both tests at once — zero picks
+    # across 17 digests, and its newest entry was 24 days old when checked,
+    # against a 48h lookback. The area it was meant to serve is not starved:
+    # `ai_consciousness` took 11 slots over those same digests, all of them from
+    # LessWrong and the Alignment Forum, which is where that conversation
+    # actually happens. The query was too narrow to ever land inside the window.
     # Three more targeted queries, one per remaining interest area that asked for
     # papers. `deep_reads` is defined in interests.yaml as "research papers on any
     # of the above topics", and the two queries above only covered two topics.

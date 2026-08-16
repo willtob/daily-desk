@@ -53,9 +53,10 @@ does with that result. `nodes/summarize.py` (the node) and
 file's docstring for why they're split.
 
 ## Feeds
-50 feeds are configured in [feeds.yaml](../feeds.yaml), grouped into 11 themes:
-`embedded_wearables`, `big_tech`, `careers`, `startup_vc`, `ai`, `agentic`,
-`ai_research`, `ml_applied`, `florida`, `barcelona_dates`, `spain`. Edit freely.
+58 feeds are configured in [feeds.yaml](../feeds.yaml), grouped into 12 themes:
+`embedded_wearables`, `big_tech`, `careers`, `world_politics`, `startup_vc`,
+`ai`, `agentic`, `ai_research`, `ml_applied`, `florida`, `barcelona_dates`,
+`spain`. Edit freely.
 
 `barcelona_dates` is the what's-on half of Barcelona, separate from `spain`'s
 what-happened: Barcelona Secreta, Time Out, La Vanguardia's food section and

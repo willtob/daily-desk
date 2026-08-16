@@ -158,9 +158,21 @@ areas:
       - "on-device inference instead of sending data to the cloud"
 
   - name: embedded_wearables
-    # Weight up: five headlines filled in, and the area sits low on the score
-    # scale (median 0.460) for reasons that are about phrasing, not preference.
-    weight: 1.1
+    # Weight DOWN, 1.1 -> 0.8, and this is the one weight here set against what
+    # the form said rather than from it. Two things changed after that form was
+    # filled in. The ESP32 panel this repo was built around is retired, so the
+    # daily reason to track board and chip news went with it; and the ask since
+    # is explicitly for less of it. The area took 19 of 177 slots over 17
+    # digests, second only to the Spain/Barcelona pair, which is more than a
+    # retired interest should be spending.
+    #
+    # Down rather than out: the build register here ("I built this thing nobody
+    # has built before") is the part worth keeping, and it is the part that
+    # still wins on its merits when it is genuinely good. 0.8 means a strong
+    # hardware post can still take a slot; a routine dev-board announcement
+    # can't. Raise it back to 1.1 if a hardware project starts up again — the
+    # references below need no changes for that, only the number.
+    weight: 0.8
     description: >
       Embedded hardware and wearables: new microcontrollers and dev boards,
       teardowns, and low-power design. I want the build details — pinouts, power
@@ -223,12 +235,21 @@ areas:
       - "how to become a technical software engineer: learning C, algorithms, and LeetCode"
 
   - name: startup_vc
-    # Weight down slightly: 18 picks over ten days off three half-filled
-    # headline slots, and the form narrows the area rather than expanding it
-    # ("I don't care about specific big name companies"). The references now
-    # lead with the ecosystem and with Barcelona, which is what was actually
-    # asked for, instead of with funding-round wires.
-    weight: 0.9
+    # Weight UP, 0.9 -> 1.2, reversing the cut below. That cut was made because
+    # the area was taking 18 picks off three half-filled headline slots, i.e. it
+    # was winning more than it had been asked for. It has since been asked for
+    # directly and by name, which is a better signal than the form was, so the
+    # number follows the ask.
+    #
+    # Both levers moved together, deliberately. The weight decides how often
+    # this area beats the others; the four feeds added under `startup_vc` in
+    # feeds.yaml decide whether there is anything good to win with. Raising the
+    # weight alone would have promoted the same three sources' weaker articles —
+    # a louder version of the same page, which is not what more startup news
+    # means. Watch that this does not simply push funding-round wires up: the
+    # references below still lead with the ecosystem rather than the scoreboard,
+    # and that ordering is what the extra volume is meant to feed.
+    weight: 1.2
     description: >
       Startup and venture business, weighted toward AI and hardware and toward
       the scene rather than the scoreboard: who is backing what, accelerators
@@ -245,6 +266,83 @@ areas:
       # Same cross-language reasoning as in `spain` below: the Barcelona startup
       # story is as likely to break in Spanish as in English.
       - "ecosistema emprendedor y startups en Barcelona"
+      # Added with the four European feeds: the funding wires phrase a round as
+      # a company event, and the ecosystem coverage phrases it as a place event
+      # ("Barcelona-based X raises"). Both registers now have a reference.
+      - "European startup raises a seed or Series A round"
+      - "accelerator, incubator, or startup hub in a European city"
+
+  # NEW AREA. Everything else in this file is either work-adjacent or where I
+  # live; nothing was pointed at the world in general, so a digest could lead
+  # with a Barcelona pool opening and never mention an election. This is the
+  # daily what-is-going-on section.
+  #
+  # Weight 1.35, and both the number and the phrasing of the references below
+  # were measured on a live corpus rather than guessed. Worth reading before
+  # changing either, because the obvious version of this area does not work.
+  #
+  # WHY THE WEIGHT IS THIS HIGH. Areas do not share a score scale. Wire
+  # headlines are specific and various ("ICE detained a Venezuelan soccer pro"),
+  # so they sit further from any general reference phrase than a listicle sits
+  # from `barcelona_dates` — that area matches its references almost verbatim
+  # and scores 0.6-0.86. Measured on 463 articles: at weight 1.15 this area won
+  # 93 articles and put *zero* on a ten-slot page whose cutoff was 0.619; at
+  # 1.35 it takes 3, which is the per-area cap and therefore the most it can
+  # take. Same reasoning as the note on `embedded_wearables` — an area can sit
+  # low on the scale for reasons of phrasing rather than preference, and the
+  # weight is the right place to correct that.
+  #
+  # 1.5 was also tested. It seats the same three stories higher up the deck
+  # (positions 2, 3 and 7 instead of 6, 8 and 10) rather than adding any, since
+  # the cap binds either way. The trade is on quiet news days, where 1.5 admits
+  # raw-0.40 wire filler and 1.35 does not. Move it if the section reads thin.
+  #
+  # WHY THE REFERENCES READ AS HEADLINES. The first draft of this area was
+  # written as categories — "war, conflict, or a diplomatic crisis between
+  # countries". It scored the AI-adjacent politics stories top and buried the
+  # actual news: the best matches were "AI vs the people" and "AI in drug
+  # discovery", while Afghanistan and Brexit sat at 0.38. Rewriting the same
+  # nine topics as sentences a wire would actually print lifted the genuine
+  # stories about 0.09 each and reordered the area around them. This is the
+  # file's own advice at the top ("the kind of headline I'd want to see") and
+  # this area is the sharpest demonstration of it in here.
+  #
+  # No `avoid` yet, deliberately. The failure to watch for is a thin procedural
+  # story beating a substantial one, and the honest way to find that phrasing is
+  # to read a week of digests — a broad negative would narrow more than filter.
+  - name: world_politics
+    weight: 1.35
+    description: >
+      What is happening in the world and why, for someone who wants to be
+      genuinely current rather than briefed on everything. Elections, wars and
+      diplomacy, the economy, and the decisions governments make that change
+      how people live. I want the story with its stakes attached — what
+      changed, who it lands on, what follows — over the procedural beat of who
+      said what at which press conference. I live between the US and Spain, so
+      both are close to home, but this is deliberately not a US-only view.
+    references:
+      - "opposition wins majority in a national election"
+      - "ceasefire agreed after months of fighting"
+      - "government announces a crackdown on immigration"
+      - "central bank raises interest rates as inflation stays high"
+      - "thousands protest in the capital against the government"
+      - "president signs the bill into law after weeks of deadlock"
+      - "peace talks stall as strikes continue across the border"
+      - "new tariffs hit trade between the two countries"
+      - "court blocks the government's policy"
+      - "minister resigns amid a widening scandal"
+      - "troops advance as the humanitarian crisis deepens"
+      - "countries agree new targets at the climate summit"
+      # Tech regulation belongs here rather than in `big_tech`: the story is the
+      # government acting, and it is one of the few places where this area and
+      # the working ones overlap on purpose.
+      - "regulators move to rein in the tech giants"
+      # Explanatory register, not the wire. The interesting article about a
+      # story I have already seen the headline of is the one saying why it is
+      # happening — and register shifts similarity enough that it needs its own
+      # phrasing rather than trusting the topical references above to catch it.
+      - "why this conflict is escalating now"
+      - "what the election result means for the country"
 
   - name: florida
     # Weight up: this is one of the two places I live, it carries the things I

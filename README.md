@@ -22,7 +22,7 @@ that gets graded.**
 Most news apps show you everything and leave you to do the sorting. This one
 does the sorting first.
 
-Every morning at 8am, a program on my Mac reads about fifty news sites,
+Every morning at 8am, a program on my Mac reads about sixty news sites,
 throws away everything I wouldn't care about, writes a short honest summary
 of the ten stories that survive, and leaves them on my desktop as a small
 stack of cards. I flip through them with an arrow button. If one looks
@@ -35,11 +35,11 @@ note that keeps itself up to date.
 
 ## How it decides what's worth reading
 
-I wrote down what I'm interested in — twelve subjects, in ordinary English
-sentences. Things like *small AI models running on battery-powered devices*,
-or *what's on in Barcelona this weekend*. That file is the whole
-configuration; there is no algorithm learning about me in the background that
-I can't see or edit.
+I wrote down what I'm interested in — thirteen subjects, in ordinary English
+sentences. Things like *what's actually happening in the world today*,
+*startups raising money in Europe*, or *what's on in Barcelona this weekend*.
+That file is the whole configuration; there is no algorithm learning about me
+in the background that I can't see or edit.
 
 Every new article gets compared against those descriptions and scored from 0
 to 1. The comparison is done by **meaning, not keywords** — an article about
@@ -99,7 +99,7 @@ worse outcome than a name that's a bit historical.
 ## How it's built
 
 ```
-50 news feeds
+58 news feeds
       │
       ▼
   fetch  →  remove duplicates  →  score against my interests

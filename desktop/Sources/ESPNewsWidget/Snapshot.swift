@@ -54,7 +54,10 @@ enum Snapshot {
 
         // Three positions: the tints and the peek stack change under you as
         // the deck advances, and only the first card is checkable from one.
-        for position in 0..<3 {
+        // Four rather than three since `world_politics` joined the fixture: its
+        // sand badge is the only one off the amber/coral ramps, so it is the
+        // one a later palette edit is most likely to break, and it sits fourth.
+        for position in 0..<4 {
             let view = shell(position: position, count: articles.count) {
                 DeckView(articles: articles, position: position,
                          feedback: feedback, client: client, onOpen: { _ in })
@@ -367,6 +370,25 @@ enum Snapshot {
             matchedArea: "spain",
             score: 0.3120,
             url: "https://example.com/c"
+        ),
+        // The sand tint is the one badge colour that is neither an amber nor a
+        // coral, and it is the newest, so it is the one most likely to be got
+        // wrong by a later palette edit. Kept in the fixture for that reason.
+        Article(
+            title: "South Korea proposes talks to officially end the war with the North",
+            summary: """
+                Seoul has offered military talks aimed at converting the 1953 \
+                armistice into a formal peace treaty, the first such proposal in \
+                **six years**.
+
+                The North has not responded publicly. Analysts quoted put the odds \
+                low but note the offer lands days before a scheduled round of \
+                US-South Korea exercises.
+                """,
+            source: "BBC World",
+            matchedArea: "world_politics",
+            score: 0.6484,
+            url: "https://example.com/d"
         ),
         Article(
             title: "Gradient boosting still wins on tabular data",

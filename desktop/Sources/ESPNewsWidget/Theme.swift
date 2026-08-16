@@ -157,6 +157,12 @@ struct AreaStyle {
         "embedded_wearables":  AreaStyle(label: "EMBEDDED", tint: Color(hex: 0xF6AA4B)),
         "tech_careers":        AreaStyle(label: "CAREERS",  tint: Color(hex: 0x76ACDE)),
         "startup_vc":          AreaStyle(label: "STARTUP",  tint: Color(hex: 0xFDD271)),
+        // Derived rather than sampled, like the four tints below the amber and
+        // coral ramps: the wallpaper has no neutral light enough to carry the
+        // ink. This is the amber ramp desaturated most of the way to sand,
+        // which leaves it legible next to the four saturated ambers above and
+        // reads as newsprint, which is what it is.
+        "world_politics":      AreaStyle(label: "WORLD",    tint: Color(hex: 0xDCC6A0)),
         "florida":             AreaStyle(label: "FLORIDA",  tint: Color(hex: 0xE48142)),
         "spain":               AreaStyle(label: "SPAIN",    tint: Color(hex: 0xD6683F)),
         "barcelona_dates":     AreaStyle(label: "BCN PLAN", tint: Color(hex: 0xEE9B85)),
