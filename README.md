@@ -21,29 +21,27 @@ that gets graded.**
 `swift run ESPNewsWidget --snapshot out/ --offline` — so they regenerate
 instead of going stale.</sub>
 
-## What it is, in plain English
+## What it is
 
 Most news apps show you everything and leave you to do the sorting. This one
 does the sorting first.
 
 Every morning at 8am, a program on my Mac reads about sixty news sites,
-throws away everything I wouldn't care about, writes a short honest summary
+throws away everything I wouldn't care about, writes a summary
 of the ten stories that survive, and leaves them on my desktop as a small
-stack of cards. I flip through them with an arrow button. If one looks
-interesting I click it, and the card opens out into the full summary — or I
-press **Listen** and it reads the story aloud.
+stack of cards. If one looks interesting I click it, and the card opens out into the full summary. 
 
-That's the whole thing. No app to launch, no feed to scroll, no
+No app to launch, no feed to scroll, no
 notifications. It just sits on the desktop behind my windows, like a sticky
 note that keeps itself up to date.
 
 ## How it picks the ten
 
-This is the part of the project I care most about, so it gets the most room.
+This is the part of the project I care most about.
 Roughly 500 articles come in every morning and ten go on the desk. Here is
 the whole of how that happens.
 
-### The profile is a file I wrote, not a model that watched me
+### The profile is a file I wrote
 
 Thirteen subjects, each one a short paragraph of ordinary English plus a
 handful of example headlines. *What's actually happening in the world today.
@@ -51,15 +49,13 @@ Startups raising money in Europe. What's on in Barcelona this weekend.*
 
 That file **is** the algorithm's opinion of me. I can open it, disagree with
 it, and change a line. Nothing is learned about me in the background that I
-can't read, and there is no engagement signal anywhere in the system — it
-doesn't know or care what I clicked on, only what I told it and what I
-explicitly thumbed.
+can't read.
 
 ### Matching is by meaning, not by keywords
 
-Every article and every line of the profile is turned into a point in space,
-positioned so that things which *mean* similar things land near each other.
-Scoring is just measuring how close two points are.
+Every article and line of the profile is turned into a point in space,
+positioned so that articles which relate to similar topics of interest land close in vector space.
+Cosine similarity is used to measure proximity. 
 
 This is why an article about "on-device inference" matches a profile line
 about "AI running on small hardware" — no word appears in both. A keyword
@@ -110,11 +106,9 @@ Without correction the world section would simply never appear, not because
 I don't want it but because of how its headlines are shaped. The knob fixes
 that, and it's one number I can turn.
 
-### What a thumbs-up actually does
+### What a thumbs up does
 
-The part people assume is magic, and isn't.
-
-**A thumbs-up does not mean "more world news."** It means *"more articles
+**A thumbs up does not mean "more world news."** It means *"more articles
 like this one."* The article's own text is kept and pinned to the subject it
 matched, as a worked example of what good looks like there. From then on,
 new articles are measured against my examples as well as against my
@@ -123,7 +117,7 @@ composite example.
 
 Two things keep that from taking over.
 
-**It's throttled, hard.** A like can lift a story by at most 0.05, on a scale
+**It's throttled.** A like can lift a story by at most 0.05, on a scale
 where making the page takes about 0.6. A nudge — a few places up the ranking,
 never a promotion from nowhere. That sounds too timid to be worth building
 until you see it switched off: in testing, a single thumbs-up on one
@@ -137,13 +131,13 @@ converge on slop, and the cap is what stands in front of it.**
 nothing about how AI articles are ranked. A misfiled thumb costs one subject,
 not the whole profile.
 
-A thumbs-down works the same way in reverse and gets an even shorter lever,
-for a reason worth knowing: a whole disliked article recognises its own kind
-*very* precisely — about 0.94 similarity against its nearest neighbours,
+A thumbs down works the same way in reverse and gets an even shorter lever,
+for a reason worth knowing: a whole disliked article recognizes its own kind 
+precisely, about 0.94 similarity against its nearest neighbours,
 roughly double what any hand-written phrase manages. It's the sharpest
 instrument in the system, so it's given the smallest handle.
 
-### Three rules that stop it eating itself
+### Three rules for quality
 
 - **No subject can take the page.** Barcelona's papers publish far more than
   the engineering blogs, so a straight top ten would be local news daily. Any
@@ -157,7 +151,7 @@ instrument in the system, so it's given the smallest handle.
 - **Nothing repeats for 45 days**, tracked by canonical URL so a link with
   tracking junk on the end still counts as the same story.
 
-Put together: what I *say* I want is a file I can edit, what I *actually*
+Put together: what I say I want is a file I can edit, what I actually
 thumb nudges it within strict limits, and one slot every day belongs to
 neither.
 
@@ -180,7 +174,7 @@ The second tab is a study habit rather than a reader.
 
 It picks one of 78 machine-learning topics at random, starts a fifteen-minute
 timer, and then asks me to explain that topic from memory in my own words. An
-AI grades the explanation against a checklist of what a good answer contains
+LLM grades the explanation against a checklist of what a good answer contains
 — a checklist I never get to see beforehand, because if I could read it the
 exercise would be reading rather than recall. It comes back with a score, the
 specific things I missed, and the things I got right.
@@ -195,12 +189,12 @@ Dynamic Island does it. On a window this small, a timer that costs no
 vertical space is the difference between the countdown being readable and
 being an afterthought.
 
-## Where it started: a thing on my desk
+## Where it started: an ESP32 computer chip
 
-This began as physical hardware — a small ESP32 microcontroller with a narrow
+This began as physical hardware, a small ESP32 microcontroller with a narrow
 touch screen, sitting on the desk showing the same digest and reading stories
 aloud through a speaker. That device is retired now, but the card deck, the
-colour palette and the open-a-story animation were all designed for it first
+color palette and the animation were all designed for it first
 and then brought over to the Mac. The backend still speaks the exact same
 protocol the device used, so it could be plugged back in tomorrow.
 
@@ -232,7 +226,7 @@ worse outcome than a name that's a bit historical.
 | Storage | plain files for the digests, SQLite for the learning history |
 | Scheduling | macOS launchd, every morning at 08:00 |
 
-A few decisions worth knowing about, since they're the interesting part:
+Interesting decisions worth knowing:
 
 - **The summaries are written from the real article, not the feed blurb.**
   What RSS hands over is usually a teaser cut off mid-sentence, or in Hacker
@@ -248,13 +242,8 @@ A few decisions worth knowing about, since they're the interesting part:
 - **Everything expensive is cached on disk.** Re-running while tuning the
   interest profile costs almost nothing — only genuinely new text hits the
   API. A full run is a fraction of a cent.
-- **The widget is a front end and nothing more.** It knows about a URL and
-  some JSON; it knows nothing about feeds, scoring or AI. That's why the same
-  backend drove a microcontroller and a Mac app without changes.
 - **214 tests**, covering the ranking, the caching, the feedback maths, the
   API contracts and the widget's layout.
-
-Roughly 9,000 lines of Python and 5,500 of Swift.
 
 ## Running it
 
