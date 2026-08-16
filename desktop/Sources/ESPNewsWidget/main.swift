@@ -112,14 +112,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // and reopens it from Spotlight or the Dock has no way to know that
         // already happened. Two copies must never coexist, but the two
         // outcomes are not symmetric: the supervised copy is the only one
-        // launchd's KeepAlive is watching, so it must always be the
-        // survivor, or a clean exit here (NSApplication.terminate -> status
-        // 0) reads as "quit on purpose" and KeepAlive stops trying — which
-        // is exactly how a manual reopen can permanently strand the app on
-        // an unsupervised copy that nothing brings back next time it dies.
-        // getppid() can't tell the two apart (a reparented ad-hoc launch
-        // shows the same PPID=1/launchd a real LaunchAgent child does), so
-        // the LaunchAgent plist sets ESP_NEWS_WIDGET_SUPERVISED instead.
+        // launchd's KeepAlive is watching (unconditionally now — see the
+        // plist), so it must always be the survivor. An unsupervised copy
+        // left running instead is a dead end: nothing is watching it, so
+        // the next time *it* dies, nothing brings it back. getppid() can't
+        // tell the two apart (a reparented ad-hoc launch shows the same
+        // PPID=1/launchd a real LaunchAgent child does), so the LaunchAgent
+        // plist sets ESP_NEWS_WIDGET_SUPERVISED instead.
         let isSupervised = ProcessInfo.processInfo.environment["ESP_NEWS_WIDGET_SUPERVISED"] == "1"
         if let bundleID = Bundle.main.bundleIdentifier {
             let others = NSRunningApplication

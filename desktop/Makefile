@@ -22,8 +22,12 @@
 #
 # The /Applications copy is supervised by a LaunchAgent now
 # (~/Library/LaunchAgents/com.willtobin.esp-news-widget.plist), which
-# restarts it within a few seconds of any kill or crash — not just at login,
-# the way a plain login item does. `reload` asks launchd to do its own
+# restarts it within a few seconds no matter how it exits — crash, kill, or a
+# clean Quit — not just at login, the way a plain login item does. The widget
+# is meant to be permanently on the desktop, so quitting from the UI only
+# ever buys ~5 seconds; actually stopping it means unloading the job:
+# `launchctl bootout gui/$$(id -u)/com.willtobin.esp-news-widget`.
+# `reload` asks launchd to do its own
 # kill-and-relaunch (`kickstart -k`) rather than pkill+open, so the two never
 # race and double-launch. `run` and `dev` build a *different* copy (build/,
 # or no bundle at all) but still share the ESPNewsWidget process name, so a
