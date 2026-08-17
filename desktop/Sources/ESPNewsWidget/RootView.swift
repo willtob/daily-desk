@@ -68,7 +68,7 @@ struct RootView: View {
                         deck
                         nav
                     } else {
-                        LearnView(store: learn)
+                        LearnView(store: learn, audio: audio)
                     }
                 }
 

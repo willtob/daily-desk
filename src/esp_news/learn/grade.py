@@ -63,7 +63,13 @@ _MAX_EXPLANATION_CHARS = 24000
 # 1: First rubric. Ten-point bands anchored on what the explanation contains,
 #    missed_concepts constrained to the topic's `covers` hint, three calibration
 #    examples on k-means (weak/middling/strong).
-PROMPT_VERSION = "1"
+# 2: Transcription addendum, appended for source="transcript" only. Bands,
+#    checklist rule and calibration examples all unchanged — the addendum says
+#    what a transcription artifact is and nothing about how to score. Bumped
+#    anyway because a v1 grade and a v2 grade of the same spoken answer are no
+#    longer guaranteed to be the same call, and a stored grade whose rubric
+#    cannot be reconstructed is the failure this version number exists for.
+PROMPT_VERSION = "2"
 
 
 class Grade(BaseModel):
@@ -231,7 +237,65 @@ understanding it. Nothing here needs fixing.",
 }
 """
 
+# Appended only when the explanation arrived through the microphone.
+#
+# **This is not a softer rubric and must not become one.** The bands above stay
+# exactly as they are, and so does the sentence that already covers speech —
+# "halting or badly organised prose that contains the right substance scores on
+# the substance". Spoken answers are graded on substance because *all* answers
+# are graded on substance; saying "be lenient, it was spoken" would put spoken
+# and typed grades on different scales and make the `source` column in `grades`
+# uninterpretable, which is the one thing it exists to prevent.
+#
+# What this does say is narrower and factual: some of the text the model is
+# reading was never said. Measured on this machine, feeding a fluent 618-word
+# spoken explanation of the KV cache through SpeechTranscriber produced, among
+# others:
+#
+#     "paged attention"     → "detention"
+#     "the entire cache"    → "the entire cash"
+#     "quadratic"           → "squadratic"
+#     "spend memory"        → "Spin memory"
+#     "when you first"      → "when you 1st"
+#
+# Every one of those is a correct statement that a grader reading literally
+# would mark as an error or as an omission — and "didn't mention paged
+# attention" is exactly the kind of specific, checklist-derived missed_concept
+# the rubric above is designed to produce, so this failure lands squarely in the
+# part of the output that is meant to be trustworthy. Telling the model to read
+# through the artifact costs nothing on a clean transcript and rescues the
+# answer on a dirty one.
+_TRANSCRIPTION_NOTE = """\
+
+TRANSCRIPTION. This explanation was spoken aloud and machine-transcribed, so \
+some of what you are reading is an artifact of the transcription rather than \
+something they said. Disfluencies ("um", "uh", false starts, repeated words), \
+missing or wrong punctuation, and sentence boundaries in odd places are all \
+transcription artifacts — ignore them entirely. So are misrecognised technical \
+terms: a transcriber that has no idea what the topic is will turn an unfamiliar \
+term into a common word that sounds like it. Where the intended term is \
+unambiguous from the surrounding sentence, grade the intended term as if it had \
+been transcribed correctly, and do not list it as missing or wrong. Only treat \
+something as an error of understanding when the substance around it is also \
+wrong. This changes nothing about the scoring bands or about what counts as a \
+missed concept — it is only about not marking someone down for what the \
+microphone heard.
+"""
+
 _INSTRUCTIONS = f"{_RUBRIC}\n\n{_CALIBRATION}"
+
+
+def instructions_for(source: str) -> str:
+    """The grader's instructions for one call.
+
+    Split out as a function rather than built inline so the test can assert the
+    thing that actually matters here — that a typed explanation is graded by
+    byte-identical instructions to the ones it was graded by before speech
+    existed, and that the addendum reaches nothing else.
+    """
+    if source == "transcript":
+        return f"{_INSTRUCTIONS}\n{_TRANSCRIPTION_NOTE}"
+    return _INSTRUCTIONS
 
 
 class Grader:
@@ -253,10 +317,21 @@ class Grader:
     def grade(self, topic: Topic, explanation: str, *, source: str = "text") -> GradeResult:
         """Grade one explanation. Raises on an empty explanation or an API failure.
 
-        ``source`` is carried for the log and the stored row rather than shown to
-        the model: the rubric is about substance, and telling the grader it is
-        reading a transcript would invite it to make allowances for speech that
-        it does not make for typing. Same rubric, both ways in.
+        ``source`` reaches the model in exactly one way: a spoken explanation
+        gets ``_TRANSCRIPTION_NOTE`` appended to the instructions, and nothing
+        else about the call changes. The rubric, the bands and the calibration
+        examples are the same both ways in, deliberately — the point is that the
+        two scales stay comparable, which is what makes the ``source`` column in
+        ``grades`` worth having.
+
+        This used to say the source was withheld from the model entirely, on the
+        reasoning that telling it would invite allowances for speech that typing
+        does not get. That reasoning still holds for *scoring* and the addendum
+        is careful not to touch it. It did not hold for transcription errors,
+        which are not the speaker's: a transcriber with no idea what the topic
+        is turns "paged attention" into "detention", and a grader reading that
+        literally reports a missed concept that was in fact covered. See the
+        note above ``_TRANSCRIPTION_NOTE`` for the measured examples.
         """
         explanation = (explanation or "").strip()
         if not explanation:
@@ -281,7 +356,7 @@ class Grader:
         started = time.perf_counter()
         response = self._openai().responses.parse(
             model=self.model,
-            instructions=_INSTRUCTIONS,
+            instructions=instructions_for(source),
             input=prompt,
             text_format=Grade,
             max_output_tokens=_MAX_OUTPUT_TOKENS,

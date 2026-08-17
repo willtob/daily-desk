@@ -28,7 +28,7 @@ from fastapi.testclient import TestClient
 
 from esp_news.api import app
 from esp_news.learn.api import get_bank, get_grader, get_store
-from esp_news.learn.grade import Grade, GradeResult
+from esp_news.learn.grade import _INSTRUCTIONS, Grade, GradeResult, instructions_for
 from esp_news.learn.store import AlreadyGradedError, LearnStore
 from esp_news.learn.topics import LearnSettings, Topic, TopicBank
 
@@ -328,6 +328,41 @@ def test_an_unknown_source_is_rejected(client):
         json={"session_id": session_id, "explanation_text": "x", "source": "telepathy"},
     )
     assert response.status_code == 422
+
+
+def test_only_a_transcript_gets_the_transcription_addendum():
+    """The rubric a typed explanation is graded by must not have moved.
+
+    The addendum exists because a transcriber turns "paged attention" into
+    "detention", and a grader reading that literally then reports a missed
+    concept that was in fact covered. It is about what the microphone heard and
+    about nothing else, so the two assertions that matter are that it reaches
+    spoken explanations and that the instructions for a typed one are
+    *byte-identical* to the ones that existed before speech did. A rubric that
+    quietly drifted for typed answers would make every score stored before this
+    change incomparable with every score after it, which is exactly the failure
+    PROMPT_VERSION exists to keep visible.
+    """
+    typed = instructions_for("text")
+    spoken = instructions_for("transcript")
+
+    assert typed == _INSTRUCTIONS
+    assert spoken.startswith(_INSTRUCTIONS)
+    assert "TRANSCRIPTION." in spoken
+    assert "TRANSCRIPTION." not in typed
+
+    # An unrecognised source is graded as if it were typed. Nothing can send one
+    # — GradeIn.source is a Literal and test_an_unknown_source_is_rejected pins
+    # that — but this is the direction the default has to fail in if it ever
+    # stops being true.
+    assert instructions_for("carrier pigeon") == typed
+
+    # And the addendum must not have grown into a second rubric. It says what a
+    # transcription artifact is; it says nothing about what anything is worth.
+    addendum = spoken[len(_INSTRUCTIONS) :]
+    for band in ("1-2", "3-4", "5-6", "7-8", "9-10"):
+        assert band not in addendum
+    assert "SCORING BANDS" not in addendum
 
 
 def test_grading_an_unknown_session_is_a_404(client):

@@ -98,6 +98,18 @@ struct LearnView: View {
     /// False when ImageRenderer is drawing this offscreen — see Scrollable.
     var scrolls = true
 
+    /// Only so that pressing record can silence a story that is still being
+    /// read aloud. Optional because the snapshot harness has no player, and
+    /// because nothing else on this screen has an opinion about audio.
+    var audio: AudioPlayer?
+
+    /// The microphone. Owned by the view rather than by LearnStore because its
+    /// engine is `@available(macOS 26.0, *)` and the store cannot name it — see
+    /// SpeechCapture's header. What it hears goes into the store through
+    /// `commitSpeech`, so `store.explanation` stays the only thing that is ever
+    /// graded, whichever way the words arrived.
+    @StateObject private var capture = SpeechCapture()
+
     @FocusState private var editorFocused: Bool
 
     var body: some View {
@@ -115,6 +127,14 @@ struct LearnView: View {
         .padding(.horizontal, Theme.pad)
         .padding(.bottom, Theme.pad)
         .task { await store.drawTopicIfNeeded() }
+        // Leaving the explain phase at all — submitted, discarded, or the tab
+        // switched under it — closes the microphone. A capture object left
+        // running behind a result screen is a hot mic with nothing on screen
+        // to say so, which is the one failure mode of this feature that would
+        // be genuinely bad rather than merely broken.
+        .onChange(of: store.phase) { _, phase in
+            if phase != .explaining { capture.reset() }
+        }
     }
 
     // MARK: - 1. Topic
@@ -203,8 +223,168 @@ struct LearnView: View {
     }
 
     // MARK: - 3. Explain
+    //
+    // One phase, four screens. `.speaking` and `.recording` are the recorder;
+    // `.reviewing` is what you did; `.editing` is the typed screen this tab
+    // used to open straight into and is now the escape hatch. The store owns
+    // which one is showing — see ExplainMode — so a crash-recovered draft comes
+    // back to the right one and Discard works identically from all four.
+    //
+    // The thing this arrangement is protecting is stated in the brief it was
+    // built from: it should feel like talking about a topic and being
+    // evaluated, not like filling in a form by voice. Which is why the
+    // transcript appears on none of these screens unless it is asked for by
+    // name, and why the word "transcript" appears exactly once, in small type.
 
+    @ViewBuilder
     private var explainScreen: some View {
+        switch store.explainMode {
+        case .speaking, .recording: speakingScreen
+        case .reviewing:            reviewScreen
+        case .editing:              editorScreen
+        }
+    }
+
+    // MARK: 3a. Speaking
+
+    private var speakingScreen: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+
+            // No badge above the topic, and no instruction line under the pill.
+            // The first pass had both — an "EXPLAIN IT OUT LOUD" capsule and a
+            // two-line "Press to start. Talk it through…" hint — and both were
+            // cut on sight, correctly. They were captioning a control that needs
+            // no caption: a microphone glyph on a round button next to a
+            // waveform is not ambiguous. Between them they cost about fifty
+            // points of height, on a panel whose real saved size is 261 × 347
+            // rather than the 288 × 300 the snapshots render at.
+            //
+            // At the topic screen's own size rather than the editor's caption.
+            // This is the thing being explained and it is now the only text on
+            // screen; shrinking it to a label would leave the panel holding one
+            // control with nothing to aim it at.
+            Text(store.topic?.name ?? "")
+                .font(.system(size: Theme.titleSize, weight: .semibold))
+                .foregroundStyle(Theme.white)
+                .multilineTextAlignment(.center)
+                .lineSpacing(Theme.titleLeading)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+
+            RecorderPill(levels: scrolls ? capture.levels : Self.posedLevels,
+                         recording: store.explainMode == .recording,
+                         preparing: scrolls && capture.state == .preparing,
+                         action: toggleRecording)
+
+            // Under the pill there is now either a running clock, a "fetching
+            // the model" line, or an error — and at rest, nothing at all. The
+            // box keeps its height across all four so that pressing record does
+            // not shift the pill under the cursor that just pressed it. 16 pt
+            // rather than the 30 this needed when it also had to hold a
+            // two-line instruction.
+            recorderCaption
+                .frame(height: 16)
+                .padding(.top, 6)
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 14) {
+                textButton("Type instead") { store.typeInstead() }
+                    .disabled(store.explainMode == .recording)
+                    .opacity(store.explainMode == .recording ? 0.4 : 1)
+                Text("·").foregroundStyle(Theme.dim.opacity(0.5))
+                textButton("Discard") { discard() }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var recorderCaption: some View {
+        if case .failed(let message) = capture.state {
+            errorLine(message)
+                .font(.system(size: Theme.metaSize))
+                .multilineTextAlignment(.center)
+        } else if capture.state == .preparing {
+            Text("Getting the speech model ready…")
+                .font(.system(size: Theme.metaSize))
+                .foregroundStyle(Theme.dim)
+        } else if store.explainMode == .recording {
+            Text(scrolls ? capture.durationText : store.spokenDurationText)
+                .font(.system(size: Theme.bodySize + 1, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Theme.accent)
+        } else {
+            // Nothing at rest. The button says what it does; a line of grey
+            // text repeating it is the sort of thing that makes a small panel
+            // feel busy without telling anyone anything they did not know.
+            // EmptyView rather than omitting the branch, so the fixed-height
+            // box above still reserves its space and the pill does not move.
+            EmptyView()
+        }
+    }
+
+    // MARK: 3b. Review
+    //
+    // What you did, not what you said. Two numbers, a Submit, and the
+    // transcript behind a text button — deliberately no preview of the words,
+    // because a preview is an invitation to read them, and reading them is how
+    // this stops being "I explained it for four minutes" and goes back to being
+    // "I filled in a form by voice".
+
+    private var reviewScreen: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+
+            Text(store.topic?.name ?? "")
+                .font(.system(size: Theme.metaSize + 1, weight: .semibold))
+                .foregroundStyle(Theme.accent)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .padding(.bottom, 14)
+
+            HStack(spacing: 0) {
+                statBlock(store.spokenDurationText, "SPOKEN", accent: true)
+                statBlock("\(store.wordCount)", "WORDS")
+            }
+
+            if let error = store.lastError {
+                errorLine(error)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 10)
+            }
+
+            Spacer(minLength: 0)
+
+            primaryButton("Submit for grading") {
+                Task { await store.submit() }
+            }
+            .disabled(store.explanation.isEmpty || store.busy)
+            .opacity(store.explanation.isEmpty || store.busy ? 0.4 : 1)
+
+            HStack(spacing: 12) {
+                textButton("Re-record") { reRecord() }
+                Text("·").foregroundStyle(Theme.dim.opacity(0.5))
+                textButton("Show transcript") { store.showTranscript() }
+                Text("·").foregroundStyle(Theme.dim.opacity(0.5))
+                textButton("Discard") { discard() }
+            }
+            .padding(.top, 8)
+        }
+    }
+
+    // MARK: 3c. Editor
+    //
+    // The screen this tab used to open into, unchanged except for the way out
+    // of it. Reached by "Type instead" before speaking and by "Show transcript"
+    // after — the "hidden portion" of the brief, where a misheard technical
+    // term can be corrected without the transcript ever having been on screen
+    // uninvited. Correcting one does not make the answer typed: see
+    // ExplanationSource.
+
+    private var editorScreen: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(store.topic?.name ?? "")
                 .font(.system(size: Theme.metaSize + 1, weight: .semibold))
@@ -246,11 +426,25 @@ struct LearnView: View {
                 }
 
                 if store.explanation.isEmpty {
+                    // Sits exactly where the first typed character will, so the
+                    // prompt does not jump when the user starts typing. Both
+                    // numbers are measured against the editor above rather than
+                    // reasoned about:
+                    //
+                    //   13 = the editor's 8 pt padding + NSTextView's own 5 pt
+                    //        lineFragmentPadding.
+                    //    6 = the editor's own vertical padding. NSTextView adds
+                    //        nothing on top, so the two agree at the same value.
+                    //
+                    // lineSpacing is 2 where the editor sets 3: an NSTextView
+                    // line box is a point shorter than a Text one at this size,
+                    // so matching the *pitch* (16 pt) takes one point less here.
                     Text("Explain it as if to someone who doesn't know it.")
                         .font(.system(size: Theme.bodySize))
+                        .lineSpacing(Theme.bodyLeading - 3)
                         .foregroundStyle(Theme.dim.opacity(0.7))
                         .padding(.horizontal, 13)
-                        .padding(.vertical, 14)
+                        .padding(.vertical, 6)
                         .allowsHitTesting(false)
                 }
             }
@@ -267,7 +461,18 @@ struct LearnView: View {
 
                 Spacer(minLength: 4)
 
-                textButton("Discard") { store.cancel() }
+                // The way back to the recorder, and only shown when there is a
+                // recorder to go back to. On a machine without a transcriber
+                // this screen is the whole feature and a "Done" that led
+                // nowhere would be a dead end.
+                if store.speechEnabled {
+                    textButton(store.explanationSource == .transcript ? "Done" : "Speak instead") {
+                        store.hideTranscript()
+                    }
+                    Text("·").foregroundStyle(Theme.dim.opacity(0.5))
+                }
+
+                textButton("Discard") { discard() }
             }
 
             primaryButton("Submit for grading") {
@@ -277,6 +482,89 @@ struct LearnView: View {
             .opacity(store.explanation.isEmpty || store.busy ? 0.4 : 1)
         }
         .onAppear { editorFocused = true }
+    }
+
+    // MARK: 3d. Driving the microphone
+    //
+    // The only place in the app that touches SpeechCapture. Everything here is
+    // a pair of calls — one to the capture object, one to the store — because
+    // the two hold different halves of the same fact: the capture object knows
+    // whether the microphone is open, and the store knows what the screen
+    // should look like and what will eventually be graded.
+
+    private func toggleRecording() {
+        Task {
+            if store.explainMode == .recording {
+                await capture.toggle()
+                // Read *after* the await. `SpeechCapture.stop` waits on the
+                // analyzer draining, and the last sentence of a four-minute
+                // answer arrives during that wait — a word count taken before
+                // it returns is short by however much had not landed.
+                store.recordSpokenDuration(capture.duration)
+                store.endRecording()
+            } else {
+                // A story can still be being read aloud from the news tab.
+                // Recording over the top of it would put the narrator into the
+                // transcript, and the grader would mark you on it.
+                audio?.stop()
+
+                // Bias the recogniser toward the topic's own words. Measured on
+                // this machine, an untuned model hears "paged attention" as
+                // "detention" and "the entire cache" as "the entire cash" —
+                // both of which cost marks for something that was said
+                // correctly. See LiveSpeechEngine.
+                capture.contextualStrings = Self.hints(for: store.topic)
+                capture.onCommit = { [weak store] text in store?.commitSpeech(text) }
+
+                store.beginRecording()
+                await capture.toggle()
+                // Permission refused, no model, no microphone: the caption
+                // says so, and the screen must not sit there pretending to
+                // record.
+                if capture.state != .recording { store.endRecording() }
+            }
+        }
+    }
+
+    private func reRecord() {
+        capture.reset()
+        store.reRecord()
+    }
+
+    private func discard() {
+        capture.reset()
+        store.cancel()
+    }
+
+    /// What to hand the recogniser as contextual strings. The topic's full name
+    /// plus its individual words: "The KV cache" biases the whole phrase, and
+    /// "KV" on its own catches the far more common case of it being said in the
+    /// middle of a sentence that the phrase never matches.
+    private static func hints(for topic: LearnTopic?) -> [String] {
+        guard let topic else { return [] }
+        let words = topic.name
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
+            .filter { $0.count > 1 }
+        var seen = Set<String>()
+        return ([topic.name] + words).filter { seen.insert($0).inserted }
+    }
+
+    /// A few seconds of speech for the offscreen renderer, which has no
+    /// microphone and would otherwise draw the recorder as a flat line — the
+    /// one thing a still of this control must not show, since the waveform is
+    /// the whole of what needed designing.
+    ///
+    /// Deterministic rather than random: these PNGs are checked against the
+    /// reference by eye and diffed against each other between commits, and a
+    /// picture that changes every render is useless for both. Two beating sine
+    /// terms give the uneven, clustered look real speech has, where a single
+    /// one gives a rolling swell that reads as a test pattern.
+    private static let posedLevels: [Double] = (0..<RecorderPill.nominalBarCount).map { i in
+        let t = Double(i)
+        let envelope = 0.55 + 0.45 * sin(t * 0.21)
+        let detail   = abs(sin(t * 0.83)) * 0.75 + abs(sin(t * 1.9)) * 0.25
+        return min(max(envelope * detail, 0.06), 1)
     }
 
     // MARK: - 4. Grading

@@ -38,6 +38,43 @@ enum LearnPhase: Equatable {
     case stats
 }
 
+/// Where the explain screen is within `.explaining`.
+///
+/// Deliberately *not* a sixth LearnPhase. The four states below all submit the
+/// same `explanation`, all honour Discard, all restore from the same draft and
+/// all reach `.grading` by the same call — they differ only in what the screen
+/// looks like. Promoting them to phases would mean every `phase == .explaining`
+/// check in this file, in LearnView and in `leaveStats()` growing into a set
+/// membership test, and would put four new rows in the phase diagram that have
+/// no transitions of their own.
+///
+///     speaking ──REC──▶ recording ──STOP──▶ reviewing ──SHOW TRANSCRIPT──▶ editing
+///        │                                      ▲                              │
+///        └──TYPE INSTEAD───────────────────────────────────────────────────────▶
+///                                               └──────────HIDE────────────────┘
+///
+/// `speaking` is where the timer lands: a recorder and the topic name, nothing
+/// else. `editing` is the old typed screen, kept as the escape hatch and as the
+/// whole of the experience below macOS 26 where there is no transcriber.
+enum ExplainMode: String, Codable, Equatable {
+    case speaking
+    case recording
+    case reviewing
+    case editing
+}
+
+/// How the words being graded arrived. Goes on the wire as `GradeIn.source` and
+/// is stored per row in `grades.source`, which is what makes it possible to ask
+/// later whether spoken answers score differently from typed ones.
+///
+/// One-way: once speech has put anything into the explanation the session is a
+/// transcript, and correcting a misheard word by hand afterwards does not turn
+/// it back into a typed answer. Only starting over clears it.
+enum ExplanationSource: String, Codable, Equatable {
+    case text
+    case transcript
+}
+
 @MainActor
 final class LearnStore: ObservableObject {
 
@@ -64,6 +101,23 @@ final class LearnStore: ObservableObject {
         didSet { saveDraft() }
     }
 
+    /// Where the explain screen is. See ExplainMode.
+    @Published private(set) var explainMode: ExplainMode = .speaking
+
+    /// Whether `explanation` came from the microphone. See ExplanationSource.
+    @Published private(set) var explanationSource: ExplanationSource = .text
+
+    /// Seconds of microphone actually open, and the word count of what came
+    /// back. Both are for the review screen, which reports what you *did*
+    /// rather than showing you what you said — the point of that screen is to
+    /// be a moment of "four minutes, six hundred words, submit it", not a
+    /// proofreading pass.
+    ///
+    /// Held here rather than read off SpeechCapture so the review screen keeps
+    /// working after the capture object has been torn down, and so the posed
+    /// snapshot stores can set them.
+    @Published private(set) var spokenDuration: TimeInterval = 0
+
     @Published private(set) var busy = false
     @Published private(set) var lastError: String?
 
@@ -84,6 +138,13 @@ final class LearnStore: ObservableObject {
     /// a longer duration would still be catching up when the next tick lands.
     nonisolated static let tickAnimation: TimeInterval = tickInterval
 
+    /// False below macOS 26, where Speech.framework has no SpeechTranscriber
+    /// and the explain screen is the typed one it has always been. An instance
+    /// property rather than a call to `SpeechCapture.isSupported` at each use
+    /// site so `posed()` can render the speaking screens on a machine that
+    /// cannot actually record.
+    let speechEnabled: Bool
+
     private(set) var client: LearnClient
     private var deadline: Date?
     private var tickTask: Task<Void, Never>?
@@ -93,9 +154,13 @@ final class LearnStore: ObservableObject {
     /// picture that is supposed to be reproducible.
     private let draftPersistenceEnabled: Bool
 
-    init(baseURL: URL, draftPersistenceEnabled: Bool = true) {
+    init(baseURL: URL,
+         draftPersistenceEnabled: Bool = true,
+         speechEnabled: Bool = SpeechCapture.isSupported) {
         self.client = LearnClient(baseURL: baseURL)
         self.draftPersistenceEnabled = draftPersistenceEnabled
+        self.speechEnabled = speechEnabled
+        self.explainMode = speechEnabled ? .speaking : .editing
         if draftPersistenceEnabled { restoreDraft() }
     }
 
@@ -119,6 +184,109 @@ final class LearnStore: ObservableObject {
     }
 
     var difficultyText: String { (topic?.difficulty ?? "").uppercased() }
+
+    /// "4:12", for the review screen. Not `clockText`: that one counts down
+    /// from fifteen minutes and rounds *up* so the last second reads 0:01
+    /// rather than 0:00, which is right for a deadline and wrong for a
+    /// stopwatch reporting what already happened.
+    var spokenDurationText: String {
+        let whole = Int(max(spokenDuration, 0))
+        return String(format: "%d:%02d", whole / 60, whole % 60)
+    }
+
+    /// Words in the explanation, however it got there.
+    ///
+    /// Whitespace-split rather than anything cleverer. A transcript has no
+    /// hyphenation and no markup, and the number is there to say "you talked
+    /// for a while and it heard you" — precision past that would be spent on
+    /// nobody.
+    var wordCount: Int {
+        explanation.split(whereSeparator: \.isWhitespace).count
+    }
+
+    // MARK: - The explain screen's sub-state
+    //
+    // Every one of these is a plain assignment: the mode is what the screen
+    // looks like, not what the app is doing. The microphone is driven by
+    // SpeechCapture, which LearnView owns — the store deliberately does not
+    // hold it, because SpeechCapture's engine is @available(macOS 26.0, *) and
+    // dragging that availability into the state machine would infect every
+    // caller of it. What comes back lands here through `commitSpeech`.
+
+    func beginRecording() {
+        guard phase == .explaining else { return }
+        explainMode = .recording
+        lastError = nil
+    }
+
+    /// The recorder stopped. Whether that leaves anything to review depends on
+    /// whether the analyzer heard words, not on how long the button was held —
+    /// four minutes of silence has nothing to submit.
+    func endRecording() {
+        guard phase == .explaining else { return }
+        explainMode = explanation.isEmpty ? .speaking : .reviewing
+    }
+
+    /// One finalized span of transcript. Called several times a minute while
+    /// recording — see SpeechCapture on why it is never called more often.
+    ///
+    /// The joining rule is measured rather than assumed: SpeechTranscriber's
+    /// finalized results carry their own leading space (the spike's second
+    /// result began " When a transformer…"), so plain concatenation is already
+    /// right and inserting another separator would double every gap. The guard
+    /// is there for the one case that is not covered, which is a result that
+    /// arrives without one.
+    func commitSpeech(_ text: String) {
+        guard phase == .explaining, !text.isEmpty else { return }
+        explanationSource = .transcript
+        if explanation.isEmpty {
+            explanation = text.trimmingCharacters(in: .whitespaces)
+        } else if explanation.last?.isWhitespace == true || text.first?.isWhitespace == true {
+            explanation += text
+        } else {
+            explanation += " " + text
+        }
+    }
+
+    /// How long the microphone was open, reported by SpeechCapture when it
+    /// stops. Kept here so the review screen survives the capture teardown.
+    func recordSpokenDuration(_ seconds: TimeInterval) {
+        spokenDuration = seconds
+    }
+
+    /// The "hidden portion": the transcript, in the editor, for correction.
+    /// Reached from review by a small text button and from nowhere else — it is
+    /// available rather than offered.
+    func showTranscript() {
+        guard phase == .explaining else { return }
+        explainMode = .editing
+    }
+
+    /// Back out of the editor. Lands on review when there is something to
+    /// review and on the recorder when the user has emptied it, which is the
+    /// only way `editing` can end up with nothing in it.
+    func hideTranscript() {
+        guard phase == .explaining else { return }
+        explainMode = explanation.isEmpty ? .speaking : .reviewing
+    }
+
+    /// The escape hatch on the speaking screen. Source stays `.text`: nothing
+    /// has been spoken yet, and if speech is used later `commitSpeech` flips it.
+    func typeInstead() {
+        guard phase == .explaining else { return }
+        explainMode = .editing
+    }
+
+    /// Throw the take away and go back to the recorder. This is the only thing
+    /// short of abandoning the session that puts `explanationSource` back to
+    /// `.text`, because it is the only one that discards every spoken word.
+    func reRecord() {
+        guard phase == .explaining else { return }
+        explanation = ""
+        explanationSource = .text
+        spokenDuration = 0
+        explainMode = .speaking
+    }
 
     // MARK: - Drawing a topic
 
@@ -189,6 +357,9 @@ final class LearnStore: ObservableObject {
         paused = false
         remaining = Self.sessionDuration
         explanation = ""
+        explanationSource = .text
+        explainMode = speechEnabled ? .speaking : .editing
+        spokenDuration = 0
         grade = nil
         lastError = nil
         phase = .topic
@@ -201,6 +372,13 @@ final class LearnStore: ObservableObject {
         stopTicking()
         paused = false
         phase = .explaining
+        // The screen the fifteen minutes hand you over to is a microphone, not
+        // a text field. Below macOS 26 there is no transcriber and it is the
+        // typed screen instead — same explanation, same Submit, one fewer way
+        // in. Nothing auto-starts either way: the recorder waits for a press,
+        // because a hot mic and a TCC prompt are both bad things to hand
+        // someone at the exact moment a timer has just buzzed at them.
+        explainMode = speechEnabled ? .speaking : .editing
         // "Funk" is the closest thing in the system sound set to a low buzz
         // rather than an alert — Basso and Sosumi read as errors, this one
         // just says the timer's done.
@@ -222,7 +400,8 @@ final class LearnStore: ObservableObject {
 
         do {
             grade = try await client.grade(sessionID: session.sessionID,
-                                           explanation: explanation)
+                                           explanation: explanation,
+                                           source: explanationSource.rawValue)
             phase = .result
             clearDraft()
             // The streak has just changed; fetch it so opening STATS is instant
@@ -245,6 +424,9 @@ final class LearnStore: ObservableObject {
         remaining = Self.sessionDuration
         paused = false
         explanation = ""
+        explanationSource = .text
+        explainMode = speechEnabled ? .speaking : .editing
+        spokenDuration = 0
         grade = nil
         topic = nil
         phase = .topic
@@ -281,23 +463,33 @@ final class LearnStore: ObservableObject {
     // store straight into a phase so Snapshot can render it. Nothing in the
     // running app calls it, and it deliberately starts no timer.
 
+    /// `speechEnabled` is forced true rather than probed. The posed screens are
+    /// documentation of what the app looks like, and they must not silently
+    /// change shape because the machine rendering them is a version behind.
     static func posed(
         phase: LearnPhase,
         topic: LearnTopic? = nil,
         remaining: TimeInterval = LearnStore.sessionDuration,
         paused: Bool = false,
         explanation: String = "",
+        mode: ExplainMode = .editing,
+        source: ExplanationSource = .text,
+        spokenDuration: TimeInterval = 0,
         grade: Grade? = nil,
         stats: LearnStats? = nil,
         error: String? = nil
     ) -> LearnStore {
         let store = LearnStore(baseURL: URL(string: "http://127.0.0.1:8010")!,
-                                draftPersistenceEnabled: false)
+                                draftPersistenceEnabled: false,
+                                speechEnabled: true)
         store.phase = phase
         store.topic = topic
         store.remaining = remaining
         store.paused = paused
         store.explanation = explanation
+        store.explainMode = mode
+        store.explanationSource = source
+        store.spokenDuration = spokenDuration
         store.grade = grade
         store.stats = stats
         store.lastError = error
@@ -318,17 +510,25 @@ final class LearnStore: ObservableObject {
     // timer has already finished (see `finishEarly`), so there is never a
     // live deadline to restore alongside it.
 
+    /// `source` and `spokenDuration` are optional purely so that a draft
+    /// written by the version of this app that predates speech still decodes.
+    /// Without that, the one upgrade where it matters most — someone with
+    /// fifteen minutes of typing sitting in UserDefaults — is the one where
+    /// the whole draft is thrown away as undecodable.
     private struct Draft: Codable {
         let topic: LearnTopic
         let session: LearnSession
         let explanation: String
+        let source: ExplanationSource?
+        let spokenDuration: TimeInterval?
     }
 
     private static let draftKey = "learnDraft"
 
     private func saveDraft() {
         guard draftPersistenceEnabled, let topic, let session else { return }
-        let draft = Draft(topic: topic, session: session, explanation: explanation)
+        let draft = Draft(topic: topic, session: session, explanation: explanation,
+                          source: explanationSource, spokenDuration: spokenDuration)
         guard let data = try? JSONEncoder().encode(draft) else { return }
         UserDefaults.standard.set(data, forKey: Self.draftKey)
     }
@@ -340,6 +540,14 @@ final class LearnStore: ObservableObject {
         topic = draft.topic
         session = draft.session
         explanation = draft.explanation
+        explanationSource = draft.source ?? .text
+        spokenDuration = draft.spokenDuration ?? 0
+        // A restored transcript lands on the review screen rather than in the
+        // editor: the words are already captured, and the next thing that
+        // should happen is Submit. A restored *typed* draft lands in the editor
+        // for the same reason — it is where its next keystroke was going.
+        // Neither lands on the recorder, which would offer to start over.
+        explainMode = explanationSource == .transcript ? .reviewing : .editing
         // Not .grading: if the crash landed mid-submit, whether the backend
         // ever saw that call is unknown. Landing in .explaining puts Submit
         // back in front of the user rather than silently retrying — at worst
