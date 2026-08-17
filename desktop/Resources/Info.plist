@@ -28,6 +28,23 @@
     <key>NSHighResolutionCapable</key>
     <true/>
 
+    <!-- The Learn tab's explain screen is a recorder: you talk about the
+         drawn topic and the transcript is what gets graded. These strings
+         are mandatory rather than advisory — a process that reaches for
+         the microphone without NSMicrophoneUsageDescription is killed by
+         the system rather than denied. That is also why `make dev` (swift
+         run, no bundle, therefore no Info.plist) cannot exercise this
+         screen at all, and `make run` or `make reload` has to be used.
+
+         Transcription is SpeechAnalyzer / SpeechTranscriber, which runs
+         against a model installed on this machine. Nothing spoken here
+         leaves it — not even to the backend, which is only ever handed
+         the finished text, exactly as if it had been typed. -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>ESP News records your spoken explanation on the Learn tab so it can be graded.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>ESP News transcribes your spoken explanation on this Mac so it can be graded.</string>
+
     <!-- The backend is plain HTTP on loopback or the LAN. App Transport
          Security blocks that by default; this exemption covers exactly
          localhost, *.local and LAN addresses, and nothing on the internet. -->

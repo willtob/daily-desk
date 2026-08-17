@@ -26,7 +26,10 @@ enum Snapshot {
     /// The panel's default size. Snapshots are pinned to it rather than run
     /// to natural height: the deck is height-driven, and letting it grow
     /// would render a card no window will ever show.
-    static let size = CGSize(width: 288, height: 300)
+    /// `nonisolated` because `learnShell` takes it as a default argument, and a
+    /// default argument is evaluated outside the actor it is a default for —
+    /// the same reason LearnStore's `sessionDuration` is.
+    nonisolated static let size = CGSize(width: 288, height: 300)
 
     /// Renders the deck and a story into `directory`. False if writing failed.
     static func run(directory: String, offline: Bool, baseURL: URL) -> Bool {
@@ -147,8 +150,29 @@ enum Snapshot {
             ("learn-timer",   .posed(phase: .timer, topic: topic, remaining: 9 * 60 + 12)),
             ("learn-paused",  .posed(phase: .timer, topic: topic, remaining: 4 * 60 + 5,
                                      paused: true)),
+            // The four faces of `.explaining`. Speaking is where the timer now
+            // hands over; the typed editor is the escape hatch it used to open
+            // into. See LearnView's Explain section.
+            //
+            // `learn-recording` is a stand-in in the same sense the editor is
+            // (see `scrolls`): the waveform it draws is a fixed array rather
+            // than a live microphone, because a still of a recorder with a flat
+            // line in it would say nothing about the one part of this control
+            // that needed designing. The levels below are a plausible few
+            // seconds of speech, not noise — the bars are meant to be checkable
+            // against the reference, and random ones cannot be.
+            ("learn-speaking",  .posed(phase: .explaining, topic: topic, mode: .speaking)),
+            ("learn-recording", .posed(phase: .explaining, topic: topic,
+                                       explanation: explanation, mode: .recording,
+                                       source: .transcript, spokenDuration: 2 * 60 + 38)),
+            ("learn-review",    .posed(phase: .explaining, topic: topic,
+                                       explanation: explanation, mode: .reviewing,
+                                       source: .transcript, spokenDuration: 4 * 60 + 12)),
+            ("learn-transcript", .posed(phase: .explaining, topic: topic,
+                                        explanation: explanation, mode: .editing,
+                                        source: .transcript, spokenDuration: 4 * 60 + 12)),
             ("learn-explain", .posed(phase: .explaining, topic: topic,
-                                     explanation: explanation)),
+                                     explanation: explanation, mode: .editing)),
             ("learn-grading", .posed(phase: .grading, topic: topic)),
             ("learn-result",  .posed(phase: .result, topic: topic, grade: grade)),
             ("learn-stats",   .posed(phase: .stats, topic: topic, stats: stats)),
@@ -158,13 +182,59 @@ enum Snapshot {
         for (name, store) in screens {
             ok = write(learnShell(store), to: dir.appendingPathComponent("\(name).png")) && ok
         }
+
+        // Again at the panel's *real* saved size, which is not `size`.
+        //
+        // `size` is 288 x 300 and always has been, and the recorder pill was
+        // built against it — at a fixed 264 pt, which is 288 minus two pads. The
+        // actual saved frame on the machine this runs on is 261 x 347 (read from
+        // `NSWindow Frame ESPNewsDeck` in the app's own defaults), so the pill
+        // came out 27 pt wider than its container. Because a fixed-width child
+        // widens the VStack around it, that did not merely clip the pill: it
+        // pushed the topic name off the right-hand edge as well. Every snapshot
+        // above looked perfect while the real widget was unusable without being
+        // dragged wider.
+        //
+        // A second render at the narrow size is the cheapest possible guard
+        // against that whole class of mistake, and the three speaking screens
+        // are where it bit. Anything that only fits at 288 now fails here.
+        // Deliberately a *long* topic name, not the fixture's "The KV cache".
+        // "Direct preference optimisation" is the real topic that exposed the
+        // bug: at 261 pt it is what visibly ran off the edge, because a short
+        // name fits inside even an over-wide container and hides the problem
+        // completely. A regression fixture that cannot fail is not one.
+        let longTopic = LearnTopic(topicID: "dpo",
+                                   name: "Direct preference optimisation",
+                                   difficulty: "advanced")
+
+        let narrow: [(String, LearnStore)] = [
+            ("learn-speaking-narrow",
+             .posed(phase: .explaining, topic: longTopic, mode: .speaking)),
+            ("learn-recording-narrow",
+             .posed(phase: .explaining, topic: longTopic, explanation: explanation,
+                    mode: .recording, source: .transcript, spokenDuration: 2 * 60 + 38)),
+            ("learn-review-narrow",
+             .posed(phase: .explaining, topic: longTopic, explanation: explanation,
+                    mode: .reviewing, source: .transcript, spokenDuration: 4 * 60 + 12)),
+        ]
+
+        for (name, store) in narrow {
+            ok = write(learnShell(store, size: narrowSize),
+                       to: dir.appendingPathComponent("\(name).png")) && ok
+        }
+
         return ok
     }
+
+    /// The real widget's saved frame, as opposed to the nominal one above. See
+    /// the note at the end of `learnScreens`.
+    static let narrowSize = CGSize(width: 261, height: 347)
 
     /// RootView's chrome for the learning tab: the switcher, the view, and the
     /// border trace when a session is running. Duplicated from RootView for the
     /// same reason `shell` is — RootView owns a polling store and a panel.
-    private static func learnShell(_ store: LearnStore) -> some View {
+    private static func learnShell(_ store: LearnStore,
+                                   size: CGSize = Snapshot.size) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 5) {
                 tabs(active: .learn)
