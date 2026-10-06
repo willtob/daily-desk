@@ -25,6 +25,17 @@ class InterestArea(BaseModel):
     references: list[str] = Field(default_factory=list)
     avoid: list[str] = Field(default_factory=list)
     weight: float = 1.0
+    # Added to this area's score for each *other* outlet carrying the same
+    # story, up to a few outlets — see nodes/score.py. 0 leaves the area alone.
+    coverage_boost: float = Field(default=0.0, ge=0.0)
+    # Hard bounds on how many front-page slots this area gets. The max is never
+    # exceeded, not even by the backfill or the wildcard; the min reserves slots
+    # when the corpus can fill them. Both unset means the CLI's soft cap only.
+    max_per_digest: int | None = Field(default=None, ge=0)
+    min_per_digest: int | None = Field(default=None, ge=0)
+    # An extra instruction handed to the summarizer for articles that won on
+    # this area, e.g. "explain what the company does".
+    summary_focus: str = ""
 
     @property
     def reference_texts(self) -> list[str]:
@@ -69,6 +80,18 @@ class InterestProfile(BaseModel):
         if dupes:
             raise ValueError(f"duplicate interest area names: {', '.join(sorted(dupes))}")
         return areas
+
+    @property
+    def area_limits(self) -> dict[str, int]:
+        return {a.name: a.max_per_digest for a in self.areas if a.max_per_digest is not None}
+
+    @property
+    def area_floors(self) -> dict[str, int]:
+        return {a.name: a.min_per_digest for a in self.areas if a.min_per_digest}
+
+    @property
+    def summary_focus(self) -> dict[str, str]:
+        return {a.name: a.summary_focus.strip() for a in self.areas if a.summary_focus.strip()}
 
 
 def load_interests_profile(path: str | Path | None = None) -> InterestProfile:

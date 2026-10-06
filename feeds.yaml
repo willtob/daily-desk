@@ -22,23 +22,16 @@ themes:
       url: https://blog.adafruit.com/feed/
     - name: CNX Software
       url: https://www.cnx-software.com/feed/
-    # The three feeds above are editorial — someone writing up someone else's
-    # build. This one is people posting their own, which is the register half of
-    # `embedded_wearables` ("I have built an amazing project nobody has built
-    # before") and the part nothing else here supplies. Busy: ~22 of 25 entries
-    # land inside the 48h window.
-    - name: r/embedded
-      url: https://www.reddit.com/r/embedded/.rss
     #
-    # Removed: r/esp32 (https://www.reddit.com/r/esp32/.rss). Not for being
-    # quiet — it was the busiest feed in this theme and won 10 slots across 17
-    # digests, more than the three editorial feeds put together. That is exactly
-    # why it went: the ask was less ESP32 specifically, and one feed supplying
-    # more than half of this theme's picks is the cheapest place to get it. The
-    # ESP32 panel this repo was named for is retired, so the standing reason to
-    # track that chip daily went with it. r/embedded stays and is broader — the
-    # first-person build register survives, the board-specific firehose does not.
-    # Restore it if a hardware project starts up again.
+    # Removed: r/esp32 and, on 2026-10-06, r/embedded
+    # (https://www.reddit.com/r/esp32/.rss, https://www.reddit.com/r/embedded/.rss).
+    # r/esp32 went first for supplying more than half this theme's picks after
+    # the ask was for less ESP32. r/embedded was kept as the broader home of the
+    # first-person build register, but in practice it carried the same ESP32
+    # threads ("ESP32-P4 + Arducam IMX500 — anyone tried this combo?") and the
+    # ask became to take Reddit ESP32 posts out entirely. The editorial feeds
+    # above still cover builds. Restore either if a hardware project starts up
+    # again.
 
   big_tech:
     - name: The Verge
@@ -89,6 +82,15 @@ themes:
     # desks above cover only when it spills over the border.
     - name: NYT Politics
       url: https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml
+    # Added 2026-10-06 with the push for more world news. Two more desks on the
+    # same day's stories make the coverage signal in nodes/score.py sharper —
+    # a story is "big" when several outlets run it, so the outlets have to be
+    # here to be counted. NYT World is the US paper's foreign desk (the feed
+    # above is domestic only); France 24 adds a continental European desk.
+    - name: NYT World
+      url: https://rss.nytimes.com/services/xml/rss/nyt/World.xml
+    - name: France 24
+      url: https://www.france24.com/en/rss
     - name: NPR News
       url: https://feeds.npr.org/1001/rss.xml
     # Geopolitics read through markets and trade — the register that overlaps

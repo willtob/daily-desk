@@ -116,6 +116,14 @@ city news most days — those papers simply publish more than the tech blogs. Th
 cap (default 3) limits any one interest area; if that leaves the page short, a
 second pass backfills by score, so the cap shapes the page without shrinking it.
 
+**Per-area limits, floors and stories.** An area in `interests.yaml` can set
+`max_per_digest` (a hard limit the backfill never breaks — `barcelona_dates` is
+held to 1) and `min_per_digest` (slots reserved when the corpus can fill them —
+`world_politics` gets 3 to 5). Separately, scoring groups articles that cover the
+same story across outlets, and only one article per story makes the page. The
+number of outlets on a story feeds `coverage_boost`, which is how a five-outlet
+election outranks a single-outlet regional story.
+
 **Cross-run suppression.** `digests/seen.json` remembers which articles have
 already appeared, keyed by canonical URL so a link that picks up tracking params
 still counts. Entries expire after 45 days.

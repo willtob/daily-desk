@@ -146,15 +146,18 @@ class Summarizer:
         tmp.write_text(json.dumps(self._cache, ensure_ascii=False))
         tmp.replace(self.cache_path)  # write-then-rename, as with the embedding cache
 
-    def _key(self, title: str, text: str) -> str:
+    def _key(self, title: str, text: str, focus: str = "") -> str:
         """Cache key over everything that changes the output.
 
         The article text is part of it, so a story that gets rewritten after
-        publication is re-summarized rather than served stale.
+        publication is re-summarized rather than served stale. ``focus`` only
+        joins the key when there is one, so adding a focus to one area leaves
+        every other area's cached summaries valid.
         """
-        material = "\x00".join(
-            [self.model, PROMPT_VERSION, str(self.target_chars), title, text]
-        )
+        parts = [self.model, PROMPT_VERSION, str(self.target_chars), title, text]
+        if focus:
+            parts.append(focus)
+        material = "\x00".join(parts)
         return hashlib.sha256(material.encode()).hexdigest()
 
     # ── summarizing ──────────────────────────────────────────────────────────
@@ -168,8 +171,11 @@ class Summarizer:
             self._client = OpenAI()
         return self._client
 
-    def summarize(self, title: str, source: str, text: str) -> str:
+    def summarize(self, title: str, source: str, text: str, focus: str = "") -> str:
         """Summarize one article. Returns "" if the model gave nothing usable.
+
+        ``focus`` is an extra instruction for this article — interests.yaml's
+        ``summary_focus`` for the area it won on.
 
         Network and API errors are swallowed and reported as an empty result —
         the caller falls back to the RSS summary, and one dead article must not
@@ -179,7 +185,8 @@ class Summarizer:
         if not text:
             return ""
 
-        key = self._key(title, text)
+        focus = (focus or "").strip()
+        key = self._key(title, text, focus)
         cached = self._cache.get(key)
         if cached:
             self.cache_hits += 1
@@ -188,7 +195,8 @@ class Summarizer:
         prompt = (
             f"Source: {source}\nHeadline: {title}\n\n"
             f"Article text:\n{text}\n\n"
-            f"Write the summary now."
+            + (f"Focus for this summary: {focus}\n\n" if focus else "")
+            + "Write the summary now."
         )
         try:
             response = self._openai().responses.create(
@@ -220,8 +228,9 @@ class Summarizer:
         self._cache_dirty = True
         return summary
 
-    def summarize_many(self, jobs: list[tuple[str, str, str]]) -> list[str]:
-        """Summarize ``(title, source, text)`` triples concurrently.
+    def summarize_many(self, jobs: list[tuple[str, ...]]) -> list[str]:
+        """Summarize ``(title, source, text)`` or ``(title, source, text, focus)``
+        tuples concurrently.
 
         Contexts are copied into the workers so LangSmith keeps the node as the
         parent run — one copy per job, taken here, since a ``Context`` can only

@@ -91,6 +91,8 @@ def build_digest_graph(
                 state.scored_articles,
                 top_n=top_n,
                 per_area_cap=per_area_cap,
+                area_limits=profile.area_limits,
+                area_floors=profile.area_floors,
                 seen=seen,
                 min_summary_chars=min_summary_chars,
                 wildcard=wildcard,
@@ -103,7 +105,9 @@ def build_digest_graph(
         # the CLI, the API payload) already reads that list.
         return {
             "curated_articles": summarize_articles(
-                state.curated_articles, summarizer=summarizer
+                state.curated_articles,
+                summarizer=summarizer,
+                focus_by_area=profile.summary_focus,
             )
         }
 

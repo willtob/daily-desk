@@ -45,6 +45,7 @@ def summarize_articles(
     *,
     fetcher: ArticleFetcher | None = None,
     summarizer: Summarizer | None = None,
+    focus_by_area: dict[str, str] | None = None,
 ) -> list[Article]:
     """Attach an LLM-written summary to each curated article.
 
@@ -52,6 +53,10 @@ def summarize_articles(
     filled in; the original RSS ``summary`` is left untouched so the two can be
     compared later. Articles that couldn't be fetched come back unchanged apart
     from ``summary_source``.
+
+    ``focus_by_area`` adds an area's ``summary_focus`` to the prompt for the
+    articles that won on it — the startup desk asks for the company to be
+    explained, which a funding headline alone never does.
     """
     if not curated:
         return []
@@ -73,7 +78,8 @@ def summarize_articles(
     #    pages are JS-rendered so extraction gets nothing, but the selftext is
     #    right there in the RSS. The MIN_USABLE_CHARS floor is what keeps this
     #    from quietly re-admitting teasers, which is the thing being fixed.
-    jobs: list[tuple[str, str, str]] = []
+    focus_by_area = focus_by_area or {}
+    jobs: list[tuple[str, str, str, str]] = []
     job_urls: list[str] = []
     for art in candidates:
         result = pages.get(art.url)
@@ -81,7 +87,8 @@ def summarize_articles(
         if not text and len(art.summary.strip()) >= MIN_USABLE_CHARS:
             text = art.summary.strip()
         if text:
-            jobs.append((art.title, art.source, text))
+            focus = focus_by_area.get(art.matched_area or "", "")
+            jobs.append((art.title, art.source, text, focus))
             job_urls.append(art.url)
 
     summaries = summarizer.summarize_many(jobs)

@@ -17,6 +17,17 @@
 #                lower it. Deliberately short lists — see the note below.
 #   weight:      multiplier on this area's similarity (1.0 = neutral). Raise to
 #                surface an area more often, lower to bury it.
+#   max_per_digest / min_per_digest:
+#                optional hard bounds on this area's front-page slots. The max
+#                holds even when the page is short; the min reserves slots when
+#                the day's feeds can fill them. Without either, the area gets
+#                the soft cap of 3 that the backfill may break.
+#   coverage_boost:
+#                optional. Added to the score for each other outlet running the
+#                same story (up to 4) — "everyone is covering this" as a signal.
+#   summary_focus:
+#                optional. An extra instruction to the summarizer for articles
+#                that win on this area.
 #
 # Areas are independent of the feed themes in feeds.yaml: a Hackaday article can
 # win on `ai_open_source`, and a TechCrunch one on `spain`.
@@ -182,8 +193,10 @@ areas:
       - "new microcontroller, dev board, or SoC announcement"
       - "wearable hardware teardown or DIY build"
       - "e-ink display, low power design, or battery life engineering"
-      - "ESP32 or Raspberry Pi project with build details"
-      - "ESP32 project ideas and what to build next"
+      # The two ESP32-specific references are gone, along with r/embedded in
+      # feeds.yaml: between them they kept a stream of Reddit ESP32 threads on
+      # the page after the ask was to stop seeing them.
+      - "Raspberry Pi or dev board project with build details"
       - "building your own fitness tracker or smartwatch from scratch"
       - "hardware hacking, reverse engineering, and getting into a device"
       # Same first-person register argument as in `agentic_tooling`. "I have
@@ -249,17 +262,27 @@ areas:
     # means. Watch that this does not simply push funding-round wires up: the
     # references below still lead with the ecosystem rather than the scoreboard,
     # and that ordering is what the extra volume is meant to feed.
+    #
+    # 2026-10-06: the area was winning on the scoreboard after all — quarterly
+    # Crunchbase tallies, weekly round-ups, VC funds closing — none of which
+    # tells you what any one company does. The references now describe a
+    # single company and its product, the trend and fund-close phrasing moved
+    # to `avoid`, and `summary_focus` makes every summary in this area explain
+    # the startup itself.
     weight: 1.2
     description: >
-      Startup and venture business, weighted toward AI and hardware and toward
-      the scene rather than the scoreboard: who is backing what, accelerators
-      and the companies coming out of them, and the strategy behind a pivot or
-      an acquisition. Barcelona's startup ecosystem is the part I can actually
-      walk into. Announcements about the biggest name-brand companies are not
-      what I am here for.
+      Individual startups and what they actually build, weighted toward AI and
+      hardware: the product, who it is for, how it works, and why investors are
+      backing it. A funding round is interesting as a way into a specific
+      company, not as a number. Accelerators and the companies coming out of
+      them, and the strategy behind a pivot or an acquisition. Barcelona's
+      startup ecosystem is the part I can actually walk into. Announcements
+      about the biggest name-brand companies are not what I am here for.
     references:
       - "startup raises a funding round for AI or hardware"
-      - "venture capital investment trends and new fund news"
+      - "AI startup raises a round to build its product: what the company does and who its customers are"
+      - "hardware startup unveils its first device and explains how it works"
+      - "founder explains the problem their startup solves and how they found their first customers"
       - "startup strategy, pivot, or acquisition"
       - "Y Combinator batch, accelerator demo day, and the startups coming out of it"
       - "Barcelona startup ecosystem and the 22@ innovation district"
@@ -271,6 +294,16 @@ areas:
       # ("Barcelona-based X raises"). Both registers now have a reference.
       - "European startup raises a seed or Series A round"
       - "accelerator, incubator, or startup hub in a European city"
+    avoid:
+      - "quarterly venture funding data: record totals and the biggest rounds of the week"
+      - "weekly round-up of every startup funding round we tracked"
+      - "venture capital firm closes a new fund"
+    summary_focus: >
+      Explain the startup itself before the deal: what the company makes or
+      sells, who uses it, how it works or what makes it different, and its
+      stage. Then the round or news and why it matters. If the piece covers
+      several startups, give each one a short line saying what it does. If the
+      text does not say what the company does, say so rather than guessing.
 
   # NEW AREA. Everything else in this file is either work-adjacent or where I
   # live; nothing was pointed at the world in general, so a digest could lead
@@ -310,8 +343,23 @@ areas:
   # No `avoid` yet, deliberately. The failure to watch for is a thin procedural
   # story beating a substantial one, and the honest way to find that phrasing is
   # to read a week of digests — a broad negative would narrow more than filter.
+  #
+  # 2026-10-06: more of it, and more of the big stories. On that day's corpus
+  # the Brazil election (six pieces across five outlets), the Quebec election
+  # and Spain's snap election all missed the page while a lone Australian
+  # migration story led the section — the phrasing references can't tell a
+  # story everyone is running from one nobody else picked up. `coverage_boost`
+  # can: +0.03 per other outlet carrying it, so a four-outlet story gains
+  # 0.12, about the width of the whole front page's score range. 0.025 was
+  # tried first and left Brazil (0.633) a hair under four single-outlet
+  # stories at 0.640-0.642. The floor of 3 and ceiling of 5 give the section
+  # a guaranteed share of the page instead of whatever the startup and
+  # Barcelona feeds leave behind.
   - name: world_politics
     weight: 1.35
+    coverage_boost: 0.03
+    min_per_digest: 3
+    max_per_digest: 5
     description: >
       What is happening in the world and why, for someone who wants to be
       genuinely current rather than briefed on everything. Elections, wars and
@@ -426,6 +474,10 @@ areas:
     # category phrasings. 1.2x is what the analysis puts parity at. It buys the
     # area the chance to win a slot on merit; it does not hand it one.
     weight: 1.2
+    # One plan a day. Time Out alone publishes four or five "cosas para hacer"
+    # lists that all score 0.65+, so under the general cap of 3 this area took
+    # 45 of ~165 slots in the last two weeks.
+    max_per_digest: 1
     description: >
       Things to actually go and do in Barcelona with someone — a plan for a
       Friday rather than a headline. Exhibitions, concerts, festivals and street
