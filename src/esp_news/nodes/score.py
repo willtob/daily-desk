@@ -6,6 +6,7 @@ article's title+summary is embedded once, and scored against every reference:
 
     positive      = max(cosine(article, ref))
     area_score    = max(0, positive - LAMBDA * max(cosine(article, avoid))) * weight
+                    + coverage_boost * min(other_outlets_on_story, 4)
     article.score = max(area_score for area in profile)
 
 Taking the max rather than an average means an article only has to be a strong
@@ -118,6 +119,53 @@ LEARNED_MAX_SHIFT = 0.05
 # neighbour at 0.30 pays 0.015. It is deliberately weaker than the written
 # lambda: a phrase you sat down and wrote outranks a single tap on a screen.
 LEARNED_AVOID_LAMBDA = 0.05
+
+# Two articles from different outlets at or above this cosine are the same
+# story. Measured on the 2026-10-06 corpus: at 0.60 the six Brazil-election
+# pieces from five outlets cluster together, as do the Quebec election and the
+# French school protests, while distinct stories from the same country stay
+# apart. At 0.55 Spain's snap election starts absorbing housing-protest pieces;
+# at 0.70 the Brazil cluster splits in half and the signal mostly disappears.
+STORY_SIMILARITY = 0.60
+
+# Coverage stops counting after this many other outlets, so the boost is a
+# bounded "this is big news" bump rather than a reward for wire syndication.
+COVERAGE_MAX_OUTLETS = 4
+
+
+def _stories(
+    article_matrix: np.ndarray, articles: list[Article], order: np.ndarray
+) -> tuple[np.ndarray, list[str]]:
+    """How many other outlets carry each article's story, and its story key.
+
+    Coverage is the "big news today" signal that no reference phrase can give:
+    a lone Australian migration story and a presidential election look equally
+    like `world_politics` to the embedding, but only one of them is in every
+    paper. Counted in distinct *sources*, so a feed running five pieces on its
+    own story doesn't vouch for itself.
+
+    The story key groups articles greedily in ``order`` (best first): each one
+    joins the first, highest-ranked cluster lead it matches, or starts its own.
+    Curate uses it to keep one article per story on the page.
+    """
+    sims = article_matrix @ article_matrix.T
+    sources = [a.source for a in articles]
+    n = len(articles)
+
+    coverage = np.zeros(n, dtype=int)
+    for i in range(n):
+        hits = np.flatnonzero(sims[i] >= STORY_SIMILARITY)
+        coverage[i] = len({sources[j] for j in hits if sources[j] != sources[i]})
+
+    keys: list[str] = [""] * n
+    leads: list[int] = []
+    for i in order:
+        lead = next((j for j in leads if sims[i, j] >= STORY_SIMILARITY), None)
+        if lead is None:
+            leads.append(int(i))
+            lead = int(i)
+        keys[i] = articles[lead].url
+    return coverage, keys
 
 
 @traceable(run_type="chain", name="score")
@@ -270,11 +318,28 @@ def score_articles(
         )  # (n, areas)
 
     per_area = _stack(use_learned=True)
+
+    # Story clustering is ordered by the pre-boost score so the boost can't
+    # decide which article leads its own cluster.
+    coverage, story_keys = _stories(
+        article_matrix, articles, np.argsort(-per_area.max(axis=1), kind="stable")
+    )
+    # Applied after the weight, so `coverage_boost: 0.025` means exactly 0.025
+    # on the final score per extra outlet. Part of the written profile, so it
+    # lands in base_score too.
+    boost = np.stack(
+        [
+            area.coverage_boost * np.minimum(coverage, COVERAGE_MAX_OUTLETS)
+            for area in profile.areas
+        ],
+        axis=1,
+    )
+    per_area = per_area + boost
     # What interests.yaml alone said. Computed only when there is feedback to
     # leave out; with none, the two are the same array by construction rather
     # than by luck, which is what makes the cold-start guarantee a fact about
     # the code instead of a claim about floating point.
-    per_area_written = _stack(use_learned=False) if learned else per_area
+    per_area_written = _stack(use_learned=False) + boost if learned else per_area
 
     best_area_idx = per_area.argmax(axis=1)
     scores = per_area.max(axis=1)
@@ -287,6 +352,8 @@ def score_articles(
                 "score": round(float(scores[i]), 4),
                 "base_score": round(float(base_scores[i]), 4),
                 "matched_area": area_names[best_area_idx[i]],
+                "coverage": int(coverage[i]),
+                "story_key": story_keys[i],
                 "area_scores": {
                     name: round(float(per_area[i, j]), 4)
                     for j, name in enumerate(area_names)

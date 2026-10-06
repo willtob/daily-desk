@@ -260,6 +260,8 @@ def curate_main() -> None:
         scored,
         top_n=args.top,
         per_area_cap=args.per_area_cap,
+        area_limits=profile.area_limits,
+        area_floors=profile.area_floors,
         seen=seen,
         min_summary_chars=args.min_summary,
         wildcard=not args.no_wildcard,
@@ -330,6 +332,8 @@ def summarize_main() -> None:
             scored,
             top_n=args.top,
             per_area_cap=args.per_area_cap,
+            area_limits=profile.area_limits,
+            area_floors=profile.area_floors,
             seen=None if args.no_seen else SeenStore(),
             min_summary_chars=args.min_summary,
             wildcard=not args.no_wildcard,
@@ -339,6 +343,7 @@ def summarize_main() -> None:
             summarizer=Summarizer(
                 model=args.summary_model, target_chars=args.target_chars
             ),
+            focus_by_area=profile.summary_focus,
         )
     except MissingAPIKeyError as exc:
         raise SystemExit(f"\n{exc}")

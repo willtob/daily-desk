@@ -9,6 +9,14 @@ alone publish more per day than every tech blog combined — so a pure top-N by
 score would hand back a page of Spanish city news on most days. The per-area
 cap is a diversity preference rather than a hard limit: if caps leave the
 digest short, a second pass fills the remaining slots by score alone.
+
+Areas can also set their own bounds in interests.yaml. ``max_per_digest`` is a
+hard limit that the backfill never breaks — one "things to do in Barcelona"
+list a day is plenty, however well the rest score — and ``min_per_digest``
+reserves slots for an area, which is how world news holds its share of the page
+on a day the startup feeds are loud. And whatever the area, one story gets one
+slot: five outlets on the same election is a reason to rank it, not to show it
+five times.
 """
 
 from __future__ import annotations
@@ -109,6 +117,8 @@ def curate_articles(
     *,
     top_n: int = DEFAULT_TOP_N,
     per_area_cap: int | None = DEFAULT_PER_AREA_CAP,
+    area_limits: dict[str, int] | None = None,
+    area_floors: dict[str, int] | None = None,
     seen: SeenStore | None = None,
     min_summary_chars: int = DEFAULT_MIN_SUMMARY_CHARS,
     wildcard: bool = True,
@@ -122,6 +132,13 @@ def curate_articles(
     the diversity cap. ``min_summary_chars`` of 0 keeps summary-less articles.
     Returned articles are ordered best-scoring first — grouping for
     readability happens at render time.
+
+    ``area_limits`` maps an area to the most slots it may ever take — unlike
+    ``per_area_cap`` it holds through the backfill and the wildcard, and it
+    replaces the soft cap for that area. ``area_floors`` maps an area to the
+    slots reserved for it, filled when the corpus has the articles. Both come
+    from ``max_per_digest`` / ``min_per_digest`` in interests.yaml. Whatever the
+    limits, only one article per ``story_key`` makes the page.
 
     ``wildcard`` appends one mid-ranked article after the ranked page, flagged
     with ``is_wildcard``. It is the only article here that isn't chosen by the
@@ -163,34 +180,66 @@ def curate_articles(
         ranked = fresh
 
     cap = per_area_cap if per_area_cap and per_area_cap > 0 else None
+    limits = area_limits or {}
+    floors = {a: n for a, n in (area_floors or {}).items() if n > 0}
 
-    # 2. First pass — best first, honouring the per-area cap.
     picked: list[Article] = []
     picked_urls: set[str] = set()
+    picked_stories: set[str] = set()
     area_counts: Counter[str] = Counter()
     capped_out = 0
 
+    def _area(art: Article) -> str:
+        return art.matched_area or "unscored"
+
+    def _blocked(art: Article) -> bool:
+        """Never on the page, whichever pass is asking: a repeat of a story
+        already there, or an area at its hard ``max_per_digest``."""
+        if art.url in picked_urls:
+            return True
+        if art.story_key and art.story_key in picked_stories:
+            return True
+        area = _area(art)
+        return area in limits and area_counts[area] >= limits[area]
+
+    def _take(art: Article) -> None:
+        picked.append(art)
+        picked_urls.add(art.url)
+        if art.story_key:
+            picked_stories.add(art.story_key)
+        area_counts[_area(art)] += 1
+
+    def _floor_shortfall() -> int:
+        return sum(max(0, n - area_counts[a]) for a, n in floors.items())
+
+    # 2. First pass — best first, honouring the soft per-area cap and the
+    #    explicit limits, and holding back enough slots for any area floor that
+    #    isn't met yet.
     for art in ranked:
         if len(picked) >= top_n:
             break
-        area = art.matched_area or "unscored"
-        if cap and area_counts[area] >= cap:
+        if _blocked(art):
+            continue
+        area = _area(art)
+        # An area with its own limit is governed by it, above or below the cap.
+        if area not in limits and cap and area_counts[area] >= cap:
             capped_out += 1
             continue
-        picked.append(art)
-        picked_urls.add(art.url)
-        area_counts[area] += 1
+        fills_floor = area_counts[area] < floors.get(area, 0)
+        if not fills_floor and top_n - len(picked) <= _floor_shortfall():
+            capped_out += 1
+            continue
+        _take(art)
 
-    # 3. Second pass — if the caps left the page short, backfill by score.
+    # 3. Second pass — if the caps or floors left the page short (a floor the
+    #    corpus couldn't fill, say), backfill by score. The soft cap gives way
+    #    here; the hard limits and the one-per-story rule do not.
     if len(picked) < top_n and capped_out:
         for art in ranked:
             if len(picked) >= top_n:
                 break
-            if art.url in picked_urls:
-                continue
-            picked.append(art)
-            picked_urls.add(art.url)
-            area_counts[art.matched_area or "unscored"] += 1
+            if not _blocked(art):
+                _take(art)
         logger.info("Curate: backfilled to %d after per-area caps", len(picked))
 
     # Backfill appends out of order; restore the score ranking.
@@ -199,7 +248,8 @@ def curate_articles(
     # 4. The exploration slot — appended after the sort, so it stays last
     #    however badly (or well) it happens to have scored.
     if wildcard:
-        pick = _pick_wildcard(ranked, exclude=picked_urls, band=wildcard_band, rng=rng)
+        pool = [a for a in ranked if not _blocked(a)]
+        pick = _pick_wildcard(pool, exclude=picked_urls, band=wildcard_band, rng=rng)
         if pick is not None:
             picked.append(pick)
             area_counts[pick.matched_area or "unscored"] += 1

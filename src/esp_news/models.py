@@ -49,6 +49,12 @@ class Article(BaseModel):
     # the score so everything downstream can tell "off-profile on purpose" from
     # "the front page was thin today".
     is_wildcard: bool = False
+    # How many *other* outlets in this run carried the same story, and the URL
+    # of the best-scoring article in that story's cluster (Phase 3). Coverage
+    # is the "this is big news today" signal; the story key is what stops the
+    # front page spending three slots on one election.
+    coverage: int = 0
+    story_key: str | None = None
 
     @property
     def embedding_text(self) -> str:
